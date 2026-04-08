@@ -1,0 +1,23 @@
+{
+  "name": "yt-down",
+  "module": "bin/yt-down.ts",
+  "type": "module",
+  "bin": {
+    "yt-down": "./bin/yt-down.ts"
+  },
+  "scripts": {
+    "start": "bun run bin/yt-down.ts",
+    "dev": "bun run --watch bin/yt-down.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "chalk": "^5.6.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
