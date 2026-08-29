@@ -99,7 +99,7 @@ update-yt-dlp:
 	@echo "$(CYAN)▶ Updating yt-dlp to latest...$(RESET)"
 	@sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
 	@sudo chmod a+rx /usr/local/bin/yt-dlp
-	@echo "$(GREEN)  ✓ yt-dlp updated to $(shell yt-dlp --version)$(RESET)"
+	@echo "$(GREEN)  ✓ yt-dlp updated to $$($$(command -v yt-dlp) --version) at $$(command -v yt-dlp)$(RESET)"
 
 # ─── Build binary ─────────────────────────────────────────────────────────────
 build:
