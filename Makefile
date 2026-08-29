@@ -33,9 +33,9 @@ check-yt-dlp:
 	@if command -v yt-dlp > /dev/null 2>&1; then \
 		echo "$(GREEN)  ✓ yt-dlp $(shell yt-dlp --version) already installed$(RESET)"; \
 	else \
-		echo "$(YELLOW)  ⚠ yt-dlp not found — installing to /usr/bin/yt-dlp...$(RESET)"; \
-		sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp; \
-		sudo chmod a+rx /usr/bin/yt-dlp; \
+		echo "$(YELLOW)  ⚠ yt-dlp not found — installing to /usr/local/bin/yt-dlp...$(RESET)"; \
+		sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp; \
+		sudo chmod a+rx /usr/local/bin/yt-dlp; \
 		echo "$(GREEN)  ✓ yt-dlp $(shell yt-dlp --version 2>/dev/null || echo 'installed') ready$(RESET)"; \
 	fi
 
@@ -97,8 +97,8 @@ check-deps:
 # ─── Update yt-dlp to latest ──────────────────────────────────────────────────
 update-yt-dlp:
 	@echo "$(CYAN)▶ Updating yt-dlp to latest...$(RESET)"
-	@sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/bin/yt-dlp
-	@sudo chmod a+rx /usr/bin/yt-dlp
+	@sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+	@sudo chmod a+rx /usr/local/bin/yt-dlp
 	@echo "$(GREEN)  ✓ yt-dlp updated to $(shell yt-dlp --version)$(RESET)"
 
 # ─── Build binary ─────────────────────────────────────────────────────────────

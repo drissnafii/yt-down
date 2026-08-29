@@ -62,8 +62,67 @@ export interface FormattedAudioFormat {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const YT_DLP_BIN = '/usr/bin/yt-dlp';
+const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? 'yt-dlp';
 const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
+
+function getJsRuntimeArgs(): string[] {
+  const configuredRuntime = Bun.env.YT_DLP_JS_RUNTIME;
+  const runtimes = configuredRuntime
+    ? [configuredRuntime]
+    : [
+        getSupportedRuntime('deno'),
+        getSupportedRuntime('qjs', 'quickjs'),
+        getSupportedBunRuntime(),
+      ].filter((runtime): runtime is string => runtime !== null);
+
+  return runtimes.length > 0 ? ['--js-runtimes', runtimes.join(',')] : [];
+}
+
+function getBaseArgs(): string[] {
+  return [YT_DLP_BIN, ...getJsRuntimeArgs(), '--no-playlist'];
+}
+
+function getSupportedRuntime(command: string, runtime = command): string | null {
+  const proc = Bun.spawnSync(['which', command], {
+    stdout: 'ignore',
+    stderr: 'ignore',
+  });
+
+  return proc.exitCode === 0 ? runtime : null;
+}
+
+function getSupportedBunRuntime(): string | null {
+  const bunPath = getSupportedRuntime('bun');
+  if (!bunPath) {
+    return null;
+  }
+
+  const proc = Bun.spawnSync(['bun', '--version'], {
+    stdout: 'pipe',
+    stderr: 'ignore',
+  });
+
+  const version = proc.stdout.toString().trim();
+  return isSupportedBunVersion(version) ? 'bun' : null;
+}
+
+function isSupportedBunVersion(version: string): boolean {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!match) {
+    return false;
+  }
+
+  const [, major, minor, patch] = match.map(Number);
+  if (major !== 1) {
+    return false;
+  }
+
+  if (minor < 2 || minor > 3) {
+    return false;
+  }
+
+  return minor !== 3 || patch <= 14;
+}
 
 // ─── Video Info ──────────────────────────────────────────────────────────────
 
@@ -71,7 +130,7 @@ const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
  * Fetch video metadata JSON using yt-dlp -j
  */
 export async function getVideoInfo(url: string): Promise<VideoInfo> {
-  const proc = Bun.spawn([YT_DLP_BIN, '-j', '--no-playlist', url], {
+  const proc = Bun.spawn([...getBaseArgs(), '-j', url], {
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -244,10 +303,9 @@ export async function downloadVideo(
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
   const args = [
-    YT_DLP_BIN,
+    ...getBaseArgs(),
     '-f', formatId,
     '-o', outputTemplate,
-    '--no-playlist',
     '--merge-output-format', 'mp4',
     '--progress',
     url,
@@ -281,10 +339,9 @@ export async function downloadAudio(
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
   const args = [
-    YT_DLP_BIN,
+    ...getBaseArgs(),
     '-f', formatId,
     '-o', outputTemplate,
-    '--no-playlist',
     '--progress',
     url,
   ];
