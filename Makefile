@@ -30,12 +30,14 @@ check-bun:
 # ─── Check / Install: yt-dlp ──────────────────────────────────────────────────
 check-yt-dlp:
 	@echo "$(CYAN)▶ Checking yt-dlp...$(RESET)"
-	@if command -v yt-dlp > /dev/null 2>&1; then \
-		echo "$(GREEN)  ✓ yt-dlp $(shell yt-dlp --version) already installed$(RESET)"; \
+	@if yt-dlp --version > /dev/null 2>&1; then \
+		echo "$(GREEN)  ✓ yt-dlp $(shell yt-dlp --version 2>/dev/null) already installed$(RESET)"; \
 	else \
-		echo "$(YELLOW)  ⚠ yt-dlp not found — installing to /usr/local/bin/yt-dlp...$(RESET)"; \
-		sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp; \
-		sudo chmod a+rx /usr/local/bin/yt-dlp; \
+		echo "$(YELLOW)  ⚠ yt-dlp not found or invalid — installing to /usr/local/bin/yt-dlp...$(RESET)"; \
+		curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /tmp/yt-dlp; \
+		chmod a+rx /tmp/yt-dlp; \
+		/tmp/yt-dlp --version > /dev/null; \
+		sudo install -m 755 /tmp/yt-dlp /usr/local/bin/yt-dlp; \
 		echo "$(GREEN)  ✓ yt-dlp $(shell yt-dlp --version 2>/dev/null || echo 'installed') ready$(RESET)"; \
 	fi
 
@@ -76,10 +78,10 @@ check-deps:
 	else \
 		echo "$(RED)  ✗ bun        not found$(RESET)"; \
 	fi
-	@if command -v yt-dlp > /dev/null 2>&1; then \
-		echo "$(GREEN)  ✓ yt-dlp     $(shell yt-dlp --version)$(RESET)"; \
+	@if yt-dlp --version > /dev/null 2>&1; then \
+		echo "$(GREEN)  ✓ yt-dlp     $(shell yt-dlp --version 2>/dev/null)$(RESET)"; \
 	else \
-		echo "$(RED)  ✗ yt-dlp     not found$(RESET)"; \
+		echo "$(RED)  ✗ yt-dlp     not found or invalid$(RESET)"; \
 	fi
 	@if command -v ffmpeg > /dev/null 2>&1; then \
 		echo "$(GREEN)  ✓ ffmpeg     installed$(RESET)"; \
@@ -97,8 +99,10 @@ check-deps:
 # ─── Update yt-dlp to latest ──────────────────────────────────────────────────
 update-yt-dlp:
 	@echo "$(CYAN)▶ Updating yt-dlp to latest...$(RESET)"
-	@sudo curl -sSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-	@sudo chmod a+rx /usr/local/bin/yt-dlp
+	@curl -fL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /tmp/yt-dlp
+	@chmod a+rx /tmp/yt-dlp
+	@/tmp/yt-dlp --version > /dev/null
+	@sudo install -m 755 /tmp/yt-dlp /usr/local/bin/yt-dlp
 	@echo "$(GREEN)  ✓ yt-dlp updated to $$($$(command -v yt-dlp) --version) at $$(command -v yt-dlp)$(RESET)"
 
 # ─── Build binary ─────────────────────────────────────────────────────────────
