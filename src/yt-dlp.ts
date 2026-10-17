@@ -62,24 +62,45 @@ export interface FormattedAudioFormat {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? 'yt-dlp';
+// Prefer ~/.local/bin/yt-dlp (installed via pipx, kept up-to-date) over
+// the system package (typically outdated). Falls back to env override or PATH.
+const LOCAL_YT_DLP = '/home/dendo/.local/bin/yt-dlp';
+const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? (Bun.file(LOCAL_YT_DLP).size > 0 ? LOCAL_YT_DLP : 'yt-dlp');
 const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
 
 function getJsRuntimeArgs(): string[] {
-  const configuredRuntime = Bun.env.YT_DLP_JS_RUNTIME;
-  const runtimes = configuredRuntime
-    ? [configuredRuntime]
-    : [
-        getSupportedRuntime('deno'),
-        getSupportedRuntime('qjs', 'quickjs'),
-        getSupportedBunRuntime(),
-      ].filter((runtime): runtime is string => runtime !== null);
+  if (Bun.env.YT_DLP_JS_RUNTIME) {
+    // User explicitly set a single runtime — honour it with the correct flag format
+    return ['--js-runtimes', Bun.env.YT_DLP_JS_RUNTIME];
+  }
 
-  return runtimes.length > 0 ? ['--js-runtimes', runtimes.join(',')] : [];
+  // Build a list of available runtimes in priority order (highest first).
+  // yt-dlp requires one --js-runtimes flag *per runtime* (not comma-separated).
+  const candidates: Array<string | null> = [
+    getSupportedRuntime('deno'),
+    getSupportedRuntime('node'),   // Node.js (nvm / system)
+    getSupportedBunRuntime(),      // Bun 1.2+
+    getSupportedRuntime('qjs', 'quickjs'),
+  ];
+
+  const args: string[] = [];
+  for (const runtime of candidates) {
+    if (runtime !== null) {
+      args.push('--js-runtimes', runtime);
+    }
+  }
+  return args;
+}
+
+function getCookieArgs(): string[] {
+  // Automatically pass Firefox cookies so YouTube bot-checks are bypassed.
+  // Controlled by the YT_DLP_COOKIES env var (set to 'none' to disable).
+  const browser = Bun.env.YT_DLP_COOKIES ?? 'firefox';
+  return browser === 'none' ? [] : ['--cookies-from-browser', browser];
 }
 
 function getBaseArgs(): string[] {
-  return [YT_DLP_BIN, ...getJsRuntimeArgs(), '--no-playlist'];
+  return [YT_DLP_BIN, ...getJsRuntimeArgs(), ...getCookieArgs(), '--no-playlist'];
 }
 
 function getSupportedRuntime(command: string, runtime = command): string | null {
@@ -112,16 +133,10 @@ function isSupportedBunVersion(version: string): boolean {
     return false;
   }
 
-  const [, major, minor, patch] = match.map(Number);
-  if (major !== 1) {
-    return false;
-  }
+  const [, major, minor] = match.map(Number);
 
-  if (minor < 2 || minor > 3) {
-    return false;
-  }
-
-  return minor !== 3 || patch <= 14;
+  // Bun >= 1.2 is supported as a yt-dlp JS runtime (no upper cap).
+  return major > 1 || (major === 1 && minor >= 2);
 }
 
 // ─── Video Info ──────────────────────────────────────────────────────────────
