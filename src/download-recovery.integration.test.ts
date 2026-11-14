@@ -4,6 +4,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runDownload } from './download-recovery.ts';
+import { withMetadataFile } from './metadata-cache.ts';
+import { getTransferArgs } from './transfer-options.ts';
 
 // Use the real downloader when installed; all traffic stays on loopback.
 const integration = test.skipIf(!Bun.which('yt-dlp'));
@@ -72,9 +74,122 @@ integration('real yt-dlp preserves completed HLS fragments when a later one fail
     res.end(fragments[index]);
   });
   const base = await listen();
-  await runDownload(['yt-dlp', '--ignore-config', '--no-playlist', '--proxy', '', '--fixup', 'never', '-o', join(dir, 'video.ts'), `${base}/video.m3u8`], {
+  await runDownload(['yt-dlp', '--ignore-config', '--no-playlist', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'native' }), '--fixup', 'never', '-o', join(dir, 'video.ts'), `${base}/video.m3u8`], {
     retryDelaysMs: [1], onRetry: () => {}, signal: AbortSignal.timeout(10_000),
   });
   expect(requests).toEqual([1, 2, 1]);
   expect(readFileSync(join(dir, 'video.ts'))).toEqual(Buffer.concat(fragments));
+}, 15_000);
+
+integration('cached metadata skips extraction; expired cached URLs fall back to the original', async () => {
+  const content = Buffer.alloc(8192, 42);
+  const paths: string[] = [];
+  server = createServer((req, res) => {
+    paths.push(req.url!);
+    if (req.url === '/expired.mp4') { res.writeHead(403); res.end(); return; }
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': content.length });
+    res.end(content);
+  });
+  const base = await listen();
+  for (const expired of [false, true]) {
+    paths.length = 0;
+    const url = `${base}/${expired ? 'expired' : 'media'}.mp4`;
+    const original = `${base}/original.mp4`;
+    const info = {
+      id: 'video', title: 'video', duration: 1, webpage_url: original,
+      url, ext: 'mp4', extractor: 'generic', extractor_key: 'Generic',
+      formats: [{ format_id: 'mp4', url, ext: 'mp4', vcodec: 'avc1', acodec: 'mp4a', filesize: content.length }],
+    };
+    const output = join(dir, `${expired}.mp4`);
+    const args = ['yt-dlp', '--ignore-config', '--proxy', '', '-f', 'mp4', '-o', output];
+    await withMetadataFile(info, async path => {
+      await runDownload([...args, original], {
+        initialArgs: [...args, '--load-info-json', path!],
+        retryDelaysMs: [1], onRetry: () => {}, signal: AbortSignal.timeout(10_000),
+      });
+    });
+    expect(readFileSync(output)).toEqual(content);
+    if (expired) {
+      expect(paths[0]).toBe('/expired.mp4');
+      expect(paths).toContain('/original.mp4');
+    } else {
+      expect(paths).toEqual(['/media.mp4']);
+    }
+  }
+}, 15_000);
+
+integration('fragment concurrency is bounded and actually downloads in parallel', async () => {
+  let active = 0;
+  let peak = 0;
+  server = createServer((req, res) => {
+    if (req.url === '/video.m3u8') {
+      res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+      res.end('#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:0\n' + Array.from({ length: 8 }, (_, i) => `#EXTINF:1,\n/${i}.ts\n`).join('') + '#EXT-X-ENDLIST\n');
+      return;
+    }
+    active++;
+    peak = Math.max(peak, active);
+    setTimeout(() => {
+      active--;
+      res.writeHead(200, { 'Content-Type': 'video/mp2t' });
+      res.end(Buffer.alloc(1024, Number(req.url?.match(/\d+/)?.[0])));
+    }, 30);
+  });
+  const base = await listen();
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'native' }), '--fixup', 'never', '-o', join(dir, 'video.ts'), `${base}/video.m3u8`], {
+    signal: AbortSignal.timeout(10_000),
+  });
+  expect(peak).toBeGreaterThan(1);
+  expect(peak).toBeLessThanOrEqual(4);
+  expect(readFileSync(join(dir, 'video.ts'))).toEqual(Buffer.concat(Array.from({ length: 8 }, (_, i) => Buffer.alloc(1024, i))));
+}, 15_000);
+
+test.skipIf(!Bun.which('yt-dlp') || !Bun.which('aria2c'))('real aria2 direct download supports range requests and byte-correct output', async () => {
+  const content = Buffer.alloc(8 * 1024 * 1024, 42);
+  const ranges: string[] = [];
+  server = createServer((req, res) => {
+    const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+    const start = Number(match?.[1] ?? 0);
+    const end = match?.[2] ? Math.min(Number(match[2]), content.length - 1) : content.length - 1;
+    if (req.headers.range) ranges.push(req.headers.range);
+    res.writeHead(match ? 206 : 200, {
+      'Content-Type': 'video/mp4', 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes',
+      ...(match ? { 'Content-Range': `bytes ${start}-${end}/${content.length}` } : {}),
+    });
+    res.end(content.subarray(start, end + 1));
+  });
+  const base = await listen();
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c' }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
+    signal: AbortSignal.timeout(10_000),
+  });
+  expect(ranges.length).toBeGreaterThan(0);
+  expect(readFileSync(join(dir, 'video.mp4'))).toEqual(content);
+}, 15_000);
+
+test.skipIf(!Bun.which('yt-dlp') || !Bun.which('aria2c'))('real aria2 HTTP rejection triggers URL refresh and succeeds', async () => {
+  const content = Buffer.alloc(1024 * 1024, 42);
+  let rejected = false;
+  let refreshed = false;
+  let requests = 0;
+  server = createServer((req, res) => {
+    if (++requests > 1 && !refreshed) {
+      rejected = true;
+      res.writeHead(403); res.end(); return;
+    }
+    const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+    const start = Number(match?.[1] ?? 0);
+    const end = match?.[2] ? Math.min(Number(match[2]), content.length - 1) : content.length - 1;
+    res.writeHead(match ? 206 : 200, {
+      'Content-Type': 'video/mp4', 'Content-Length': end - start + 1, 'Accept-Ranges': 'bytes',
+      ...(match ? { 'Content-Range': `bytes ${start}-${end}/${content.length}` } : {}),
+    });
+    res.end(content.subarray(start, end + 1));
+  });
+  const base = await listen();
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c' }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
+    retryDelaysMs: [1], onRetry: () => { refreshed = true; }, signal: AbortSignal.timeout(10_000),
+  });
+  expect(rejected).toBe(true);
+  expect(refreshed).toBe(true);
+  expect(readFileSync(join(dir, 'video.mp4'))).toEqual(content);
 }, 15_000);

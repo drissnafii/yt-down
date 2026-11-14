@@ -10,6 +10,8 @@ export class DownloadCancelledError extends Error {
 type Failure = 'connection' | 'server' | 'refresh' | 'permanent';
 
 export interface RecoveryOptions {
+  /** Use saved metadata once; subsequent attempts use the original URL args. */
+  initialArgs?: string[];
   signal?: AbortSignal;
   onRetry?: (message: string) => void;
   /** Override the backoff schedule for embedders and tests. */
@@ -28,6 +30,11 @@ function classifyFailure(stderr: string): Failure {
   // Classify the final error, not unrelated extractor warnings earlier in the run.
   const errors = errorLines(stderr);
   const message = errors.filter(line => !/fragment \d+ not found, unable to continue/i.test(line)).at(-1) ?? stderr;
+  if (/aria2c exited with code (?:2|6|7|19)\b/i.test(message)) return 'connection';
+  if (/aria2c exited with code 22\b/i.test(message)) {
+    if (/status=(?:429|5\d\d)\b/i.test(stderr)) return 'server';
+    if (/status=(?:403|404|410)\b/i.test(stderr)) return 'refresh';
+  }
   if (/permission denied|no space left|disk quota|read-only file system|postprocessing|ffmpeg|private video|video unavailable|sign in|not available|unsupported url|requested format.*not available|certificate verify failed/i.test(message)) {
     return 'permanent';
   }
@@ -54,6 +61,7 @@ export async function runDownload(args: string[], options: RecoveryOptions = {})
   const report = options.onRetry ?? ((message: string) => console.error(`\n${message}`));
   let failures = 0;
   let refreshes = 0;
+  let nextArgs = options.initialArgs ?? args;
   process.on('SIGINT', cancel);
   process.on('SIGTERM', cancel);
   options.signal?.addEventListener('abort', cancel, { once: true });
@@ -61,7 +69,8 @@ export async function runDownload(args: string[], options: RecoveryOptions = {})
 
   try {
     while (!signal.aborted) {
-      const result = await attempt([...args, ...RECOVERY_ARGS], signal);
+      const result = await attempt([...nextArgs, ...RECOVERY_ARGS], signal);
+      nextArgs = args;
       if (signal.aborted || result.cancelled) throw new DownloadCancelledError();
       if (result.exitCode === 0) return;
 
@@ -92,28 +101,46 @@ export async function runDownload(args: string[], options: RecoveryOptions = {})
 }
 
 async function attempt(args: string[], signal: AbortSignal) {
-  const proc = Bun.spawn(args, { stdout: 'inherit', stderr: 'pipe', stdin: 'ignore' });
+  const grouped = process.platform !== 'win32';
+  const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore', detached: grouped });
+  const kill = (signal: 'SIGINT' | 'SIGKILL') => {
+    try {
+      // Include external downloaders and ffmpeg in cancellation on Unix.
+      if (grouped) process.kill(-proc.pid, signal);
+      else proc.kill(signal);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  };
   let killTimer: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
-    proc.kill('SIGINT');
+    kill('SIGINT');
     // Allow yt-dlp to close its files, but don't leave an unresponsive child behind.
-    killTimer = setTimeout(() => proc.kill('SIGKILL'), 3_000);
+    killTimer = setTimeout(() => kill('SIGKILL'), 3_000);
     killTimer.unref();
   };
   signal.addEventListener('abort', stop, { once: true });
   if (signal.aborted) stop();
-  let stderr = '';
   try {
-    const decoder = new TextDecoder();
-    for await (const chunk of proc.stderr) {
-      process.stderr.write(chunk);
-      stderr = (stderr + decoder.decode(chunk, { stream: true })).slice(-32_768);
-    }
-    stderr += decoder.decode();
+    const [stdout, errors] = await Promise.all([
+      forward(proc.stdout, process.stdout),
+      forward(proc.stderr, process.stderr),
+    ]);
+    const stderr = `${stdout}\n${errors}`;
     const exitCode = await proc.exited;
     return { exitCode, stderr, cancelled: proc.signalCode === 'SIGINT' || proc.signalCode === 'SIGTERM' };
   } finally {
     signal.removeEventListener('abort', stop);
     clearTimeout(killTimer);
   }
+}
+
+async function forward(stream: ReadableStream<Uint8Array>, destination: NodeJS.WriteStream): Promise<string> {
+  const decoder = new TextDecoder();
+  let tail = '';
+  for await (const chunk of stream) {
+    destination.write(chunk);
+    tail = (tail + decoder.decode(chunk, { stream: true })).slice(-32_768);
+  }
+  return tail + decoder.decode();
 }
