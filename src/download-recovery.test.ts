@@ -71,6 +71,24 @@ test('re-extracts after a rejected URL and resumes', async () => {
   expect(attempts()).toHaveLength(2);
 });
 
+test('uses cached metadata only once and refreshes from the original URL after failure', async () => {
+  const original = fixture(['ERROR: unable to download video data: HTTP Error 403: Forbidden']);
+  const initial = [...original.slice(0, -1), '--load-info-json', '/private/video.info.json'];
+  await runDownload(original, { initialArgs: initial, retryDelaysMs: [1], onRetry: () => {} });
+  expect(attempts()[0]).toContain('--load-info-json');
+  expect(attempts()[0]).not.toContain(original.at(-1)!);
+  expect(attempts()[1]).not.toContain('--load-info-json');
+  expect(attempts()[1]).toContain(original.at(-1)!);
+});
+
+test('recovers from aria2 network and HTTP status errors', async () => {
+  await runDownload(fixture([
+    'ERROR: aria2c exited with code 19',
+    'errorCode=22 The response status is not successful. status=403\nERROR: aria2c exited with code 22',
+  ]), { retryDelaysMs: [1], onRetry: () => {} });
+  expect(attempts()).toHaveLength(3);
+});
+
 test('limits URL refreshes when access remains forbidden', async () => {
   await expect(runDownload(fixture(Array(5).fill('ERROR: HTTP Error 403: Forbidden')), {
     retryDelaysMs: [1], onRetry: () => {},

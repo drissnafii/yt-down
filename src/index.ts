@@ -140,8 +140,8 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
     },
     ...formats.map((f) => ({
       value: f.formatId,
-      label: `${chalk.red('⬢')} ${f.resolution}`,
-      hint: chalk.dim(`${f.filesizeLabel}  │  ${f.codec}${f.isCombined ? '  (combined)' : ''}`),
+      label: `${chalk.red('⬢')} ${f.resolution}${f.fps ? ` ${f.fps}fps` : ''} · ${f.variant === 'smaller' ? 'Smaller file' : 'Quality'}`,
+      hint: chalk.dim(`${f.filesizeLabel} total  │  ${f.codec}${f.isCombined ? '  (combined)' : ''}`),
     })),
     {
       value: '__cancel__',
@@ -182,7 +182,7 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
   const formatId = selectedFormat === 'best' ? 'bestvideo+bestaudio' : String(selectedFormat);
 
   try {
-    await downloadVideo(url, formatId, OUTPUT_DIR);
+    await downloadVideo(url, formatId, OUTPUT_DIR, info);
     console.log(chalk.dim('─'.repeat(60)));
     console.log('');
 
@@ -216,7 +216,7 @@ async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void
   }
 
   // Show best audio info
-  const best = audioFormats[0]!;
+  const best = audioFormats.find(format => format.ext === 'm4a') ?? audioFormats[0]!;
   p.log.info(
     chalk.red('🎙 Podcast Mode\n') +
     chalk.dim('  → Auto-selecting best audio: ') +
@@ -240,8 +240,8 @@ async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void
   console.log(chalk.dim('─'.repeat(60)));
 
   try {
-    // Use bestaudio with m4a preference for best compatibility
-    await downloadAudio(url, `bestaudio[ext=m4a]/bestaudio`, OUTPUT_DIR);
+    // Download the exact audio format shown above, preferring m4a for compatibility.
+    await downloadAudio(url, best.formatId, OUTPUT_DIR, info);
     console.log(chalk.dim('─'.repeat(60)));
     console.log('');
 

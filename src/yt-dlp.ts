@@ -7,6 +7,9 @@ import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
 import { getCookieArgs } from './cookies.ts';
 import { runDownload } from './download-recovery.ts';
 import { mkdir } from 'node:fs/promises';
+import { withMetadataFile } from './metadata-cache.ts';
+import { getTransferArgs } from './transfer-options.ts';
+import { join, resolve } from 'node:path';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,9 @@ export interface FormattedFormat {
   codec: string;
   displayLabel: string;
   isCombined: boolean;  // true for formats that have both video+audio
+  variant: 'quality' | 'smaller';
+  fps: number | null;
+  sizeEstimated: boolean;
 }
 
 export interface FormattedAudioFormat {
@@ -147,8 +153,10 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
     stderr: 'pipe',
   });
 
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   const exitCode = await proc.exited;
 
   if (exitCode !== 0) {
@@ -177,73 +185,67 @@ export async function getVideoInfo(url: string): Promise<VideoInfo> {
  * Also includes combined formats (like format 18 which has both video+audio).
  */
 export function parseVideoFormats(info: VideoInfo): FormattedFormat[] {
-  const formats = info.formats ?? [];
-
-  // Separate video-only and combined (video+audio) formats
-  const videoFormats = formats.filter(
-    (f) =>
-      f.vcodec !== 'none' &&
-      f.vcodec !== undefined &&
-      f.height !== null &&
-      f.height !== undefined &&
-      f.height > 0
-  );
-
-  // Group by height, keeping best per resolution
-  const byHeight = new Map<number, YtDlpFormat>();
-
-  for (const fmt of videoFormats) {
-    const h = fmt.height!;
-    const existing = byHeight.get(h);
-
-    if (!existing) {
-      byHeight.set(h, fmt);
-      continue;
-    }
-
-    // Prefer larger filesize (better quality) when comparing same resolution
-    const fmtSize = fmt.filesize ?? fmt.filesize_approx ?? 0;
-    const existingSize = existing.filesize ?? existing.filesize_approx ?? 0;
-
-    // Prefer combined formats for low resolutions, otherwise pick best quality
-    const fmtIsCombined = fmt.acodec !== 'none' && fmt.acodec !== undefined;
-    const existingIsCombined = existing.acodec !== 'none' && existing.acodec !== undefined;
-
-    if (fmtIsCombined && !existingIsCombined && h <= 360) {
-      byHeight.set(h, fmt);
-    } else if (fmtSize > existingSize) {
-      byHeight.set(h, fmt);
-    }
+  const available = info.formats ?? [];
+  const audio = available.filter(isAudioOnly).at(-1);
+  const groups = new Map<number, YtDlpFormat[]>();
+  for (const format of available) {
+    if (!format.vcodec || format.vcodec === 'none' || !format.height || format.height <= 0) continue;
+    const group = groups.get(format.height) ?? [];
+    group.push(format);
+    groups.set(format.height, group);
   }
 
-  // Sort descending by height
-  const sorted = [...byHeight.entries()]
-    .sort(([a], [b]) => b - a)
-    .map(([height, fmt]) => {
-      const isCombined = fmt.acodec !== 'none' && fmt.acodec !== undefined;
-      const filesize = fmt.filesize ?? fmt.filesize_approx ?? null;
-      const vcodecLabel = getCodecLabel(fmt.vcodec);
-      const acodecLabel = isCombined ? getAudioCodecLabel(fmt.acodec) : '';
-      const codecDisplay = isCombined && acodecLabel
-        ? `${vcodecLabel}+${acodecLabel}`
-        : vcodecLabel;
+  function describe(fmt: YtDlpFormat, variant: 'quality' | 'smaller'): FormattedFormat {
+    const combined = Boolean(fmt.acodec && fmt.acodec !== 'none');
+    const videoSize = estimateSize(fmt, info.duration);
+    const audioSize = audio ? estimateSize(audio, info.duration) : null;
+    const size = combined ? videoSize : videoSize && audioSize
+      ? { bytes: videoSize.bytes + audioSize.bytes, estimated: videoSize.estimated || audioSize.estimated }
+      : null;
+    const codec = [getCodecLabel(fmt.vcodec), getAudioCodecLabel(combined ? fmt.acodec : audio?.acodec)].filter(Boolean).join('+');
+    const resolution = getResolutionLabel(fmt.height!);
+    const sizeLabel = size ? `${size.estimated ? '~ ' : ''}${formatBytes(size.bytes)}` : '~ unknown';
+    const fps = fmt.fps ?? null;
+    return {
+      formatId: combined ? fmt.format_id : `${fmt.format_id}+${audio?.format_id ?? 'bestaudio'}`,
+      resolution,
+      height: fmt.height!,
+      ext: fmt.ext,
+      filesize: size?.bytes ?? null,
+      filesizeLabel: sizeLabel,
+      sizeEstimated: size?.estimated ?? false,
+      codec,
+      displayLabel: `${resolution}${fps ? ` ${fps}fps` : ''} (${variant === 'smaller' ? 'smaller file' : 'quality'})  │  ${sizeLabel} total  │  ${codec}`,
+      isCombined: combined,
+      variant,
+      fps,
+    };
+  }
 
-      const resolutionLabel = getResolutionLabel(height);
+  return [...groups.entries()].sort(([a], [b]) => b - a).flatMap(([, formats]) => {
+    // yt-dlp lists formats from worst to best, accounting for codec and frame rate.
+    const quality = describe(formats.at(-1)!, 'quality');
+    const smaller = formats.map(fmt => describe(fmt, 'smaller'))
+      .filter(fmt => fmt.filesize !== null)
+      .sort((a, b) => a.filesize! - b.filesize!)[0];
+    // Avoid duplicate choices when estimated savings are negligible or unknown.
+    return smaller && quality.filesize !== null && smaller.formatId !== quality.formatId
+      && smaller.filesize! < quality.filesize * 0.9 ? [quality, smaller] : [quality];
+  });
+}
 
-      return {
-        formatId: isCombined ? fmt.format_id : `${fmt.format_id}+bestaudio`,
-        resolution: resolutionLabel,
-        height,
-        ext: fmt.ext,
-        filesize,
-        filesizeLabel: formatBytes(filesize),
-        codec: codecDisplay,
-        displayLabel: `${resolutionLabel}  │  ${formatBytes(filesize)}  │  ${codecDisplay}`,
-        isCombined,
-      };
-    });
+function isAudioOnly(format: YtDlpFormat): boolean {
+  return (!format.vcodec || format.vcodec === 'none') && Boolean(format.acodec && format.acodec !== 'none');
+}
 
-  return sorted;
+function estimateSize(format: YtDlpFormat, duration: number | null): { bytes: number; estimated: boolean } | null {
+  if (format.filesize && format.filesize > 0) return { bytes: format.filesize, estimated: false };
+  if (format.filesize_approx && format.filesize_approx > 0) return { bytes: format.filesize_approx, estimated: true };
+  const bitrate = format.tbr ?? (isAudioOnly(format) ? format.abr : undefined);
+  if (duration && duration > 0 && bitrate && bitrate > 0) {
+    return { bytes: Math.round(bitrate * 1_000 * duration / 8), estimated: true };
+  }
+  return null;
 }
 
 /**
@@ -307,50 +309,39 @@ export function parseAudioFormats(info: VideoInfo): FormattedAudioFormat[] {
 export async function downloadVideo(
   url: string,
   formatId: string,
-  outputDir: string = OUTPUT_DIR
+  outputDir: string = OUTPUT_DIR,
+  info?: VideoInfo,
 ): Promise<string> {
-  // Ensure output dir exists
-  await mkdir(outputDir, { recursive: true });
-
-  const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
-
-  const args = [
-    ...getBaseArgs(),
-    '-f', formatId,
-    '-o', outputTemplate,
-    '--merge-output-format', 'mp4',
-    '--progress',
-    url,
-  ];
-
-  await runDownload(args);
-
-  return outputDir;
+  return download(url, formatId, outputDir, info, ['--merge-output-format', 'mp4']);
 }
 
-/**
- * Download audio only with yt-dlp.
- */
+/** Download audio using the same metadata reuse, transfer, and recovery settings. */
 export async function downloadAudio(
   url: string,
   formatId: string,
-  outputDir: string = OUTPUT_DIR
+  outputDir: string = OUTPUT_DIR,
+  info?: VideoInfo,
 ): Promise<string> {
-  // Ensure output dir exists
-  await mkdir(outputDir, { recursive: true });
+  return download(url, formatId, outputDir, info);
+}
 
-  const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
-
+async function download(url: string, formatId: string, outputDir: string, info?: VideoInfo, extra: string[] = []): Promise<string> {
+  const outputPath = resolve(outputDir);
+  const transferArgs = getTransferArgs();
+  // aria2 may create sparse partial files. Keep them apart from native partials,
+  // which resume by byte length, so switching downloaders cannot corrupt a file.
+  if (transferArgs.includes('http:aria2c')) transferArgs.push('--paths', `temp:${join(outputPath, '.aria2')}`);
   const args = [
-    ...getBaseArgs(),
-    '-f', formatId,
-    '-o', outputTemplate,
-    '--progress',
-    url,
+    ...getBaseArgs(), ...transferArgs,
+    '-f', formatId, '--paths', outputPath, '-o', '%(title)s.%(ext)s',
+    ...extra, '--progress',
   ];
-
-  await runDownload(args);
-
+  await mkdir(outputDir, { recursive: true });
+  await withMetadataFile(info, async path => {
+    await runDownload([...args, url], {
+      initialArgs: path ? [...args, '--load-info-json', path] : undefined,
+    });
+  });
   return outputDir;
 }
 
