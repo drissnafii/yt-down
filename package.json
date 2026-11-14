@@ -7,7 +7,9 @@
   },
   "scripts": {
     "start": "bun run bin/yt-down.ts",
-    "dev": "bun run --watch bin/yt-down.ts"
+    "dev": "bun run --watch bin/yt-down.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",

@@ -11,6 +11,7 @@ A premium interactive CLI tool wrapping **yt-dlp** with beautiful prompts, real-
 - ⬢ **Beautiful CLI** — Built with `@clack/prompts` + `chalk` for a premium feel
 - ⚡ **Fast** — Powered by Bun runtime
 - 📊 **Smart Formats** — Groups by resolution, shows codec + filesize, auto-merges with ffmpeg
+- 🔄 **Interruption Recovery** — Waits through connection failures and resumes saved downloads
 
 ## Prerequisites
 
@@ -46,6 +47,26 @@ bun run bin/yt-down.ts
 
 Downloads are saved to `~/Videos/yt-down/`.
 
+### Interrupted downloads
+
+During video and audio downloads, connection failures automatically trigger a
+retry after 2, 4, 8, 16, then 30 seconds between attempts. Retries continue while
+the connection is unavailable. Each attempt refreshes the download URLs from
+the original YouTube URL and resumes existing `.part` files and fragment state.
+The downloader uses a 15-second socket timeout so stalled connections can recover.
+
+Press **Ctrl+C** to cancel either an active download or a retry countdown.
+Partial files stay in the output folder. To resume after cancelling or closing
+the app, run it again with the same URL, quality, and output folder; keep the
+`.part` and `.ytdl` files. Resume requires server support and matching filenames;
+the server may require a restart if it cannot serve the saved position.
+
+Failed fragments are never silently skipped. Temporary server errors are retried,
+while persistent access rejection stops after three URL refreshes. Permanent
+errors, such as a full disk, missing permissions, unavailable formats, or required
+sign-in, stop and show the underlying error. Initial metadata fetching still
+requires a working connection.
+
 ### Browser cookies
 
 yt-down automatically uses an existing Zen cookie database (including Arch's
@@ -77,6 +98,18 @@ yt-down
 - **Prompts**: [@clack/prompts](https://github.com/natemoo-re/clack)
 - **Colors**: [chalk](https://github.com/chalk/chalk)
 - **Backend**: [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+
+## Development checks
+
+```bash
+bun test
+bun run typecheck
+make build
+```
+
+When yt-dlp is installed, tests also exercise real HTTP byte-range resume and
+fragment recovery against temporary local servers. These tests do not change
+your Wi-Fi or contact YouTube.
 
 ## License
 

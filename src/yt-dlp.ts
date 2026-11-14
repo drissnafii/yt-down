@@ -5,6 +5,8 @@
 
 import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
 import { getCookieArgs } from './cookies.ts';
+import { runDownload } from './download-recovery.ts';
+import { mkdir } from 'node:fs/promises';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -300,7 +302,7 @@ export function parseAudioFormats(info: VideoInfo): FormattedAudioFormat[] {
 // ─── Download ────────────────────────────────────────────────────────────────
 
 /**
- * Download video/audio with yt-dlp. Uses stdio:'inherit' for live progress.
+ * Download video/audio with live progress and automatic interruption recovery.
  */
 export async function downloadVideo(
   url: string,
@@ -308,7 +310,7 @@ export async function downloadVideo(
   outputDir: string = OUTPUT_DIR
 ): Promise<string> {
   // Ensure output dir exists
-  await Bun.spawn(['mkdir', '-p', outputDir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+  await mkdir(outputDir, { recursive: true });
 
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
@@ -321,16 +323,7 @@ export async function downloadVideo(
     url,
   ];
 
-  const proc = Bun.spawn(args, {
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    throw new Error(`Download failed (yt-dlp exit code: ${exitCode})`);
-  }
+  await runDownload(args);
 
   return outputDir;
 }
@@ -344,7 +337,7 @@ export async function downloadAudio(
   outputDir: string = OUTPUT_DIR
 ): Promise<string> {
   // Ensure output dir exists
-  await Bun.spawn(['mkdir', '-p', outputDir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+  await mkdir(outputDir, { recursive: true });
 
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
@@ -356,16 +349,7 @@ export async function downloadAudio(
     url,
   ];
 
-  const proc = Bun.spawn(args, {
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    throw new Error(`Download failed (yt-dlp exit code: ${exitCode})`);
-  }
+  await runDownload(args);
 
   return outputDir;
 }
