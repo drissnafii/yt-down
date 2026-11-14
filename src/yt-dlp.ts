@@ -4,6 +4,9 @@
  */
 
 import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
+import { getCookieArgs } from './cookies.ts';
+import { runDownload } from './download-recovery.ts';
+import { mkdir } from 'node:fs/promises';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,13 +95,6 @@ function getJsRuntimeArgs(): string[] {
   return args;
 }
 
-function getCookieArgs(): string[] {
-  // Automatically pass Firefox cookies so YouTube bot-checks are bypassed.
-  // Controlled by the YT_DLP_COOKIES env var (set to 'none' to disable).
-  const browser = Bun.env.YT_DLP_COOKIES ?? 'firefox';
-  return browser === 'none' ? [] : ['--cookies-from-browser', browser];
-}
-
 function getBaseArgs(): string[] {
   return [YT_DLP_BIN, ...getJsRuntimeArgs(), ...getCookieArgs(), '--no-playlist'];
 }
@@ -133,7 +129,8 @@ function isSupportedBunVersion(version: string): boolean {
     return false;
   }
 
-  const [, major, minor] = match.map(Number);
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
 
   // Bun >= 1.2 is supported as a yt-dlp JS runtime (no upper cap).
   return major > 1 || (major === 1 && minor >= 2);
@@ -305,7 +302,7 @@ export function parseAudioFormats(info: VideoInfo): FormattedAudioFormat[] {
 // ─── Download ────────────────────────────────────────────────────────────────
 
 /**
- * Download video/audio with yt-dlp. Uses stdio:'inherit' for live progress.
+ * Download video/audio with live progress and automatic interruption recovery.
  */
 export async function downloadVideo(
   url: string,
@@ -313,7 +310,7 @@ export async function downloadVideo(
   outputDir: string = OUTPUT_DIR
 ): Promise<string> {
   // Ensure output dir exists
-  await Bun.spawn(['mkdir', '-p', outputDir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+  await mkdir(outputDir, { recursive: true });
 
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
@@ -326,16 +323,7 @@ export async function downloadVideo(
     url,
   ];
 
-  const proc = Bun.spawn(args, {
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    throw new Error(`Download failed (yt-dlp exit code: ${exitCode})`);
-  }
+  await runDownload(args);
 
   return outputDir;
 }
@@ -349,7 +337,7 @@ export async function downloadAudio(
   outputDir: string = OUTPUT_DIR
 ): Promise<string> {
   // Ensure output dir exists
-  await Bun.spawn(['mkdir', '-p', outputDir], { stdout: 'ignore', stderr: 'ignore' }).exited;
+  await mkdir(outputDir, { recursive: true });
 
   const outputTemplate = `${outputDir}/%(title)s.%(ext)s`;
 
@@ -361,16 +349,7 @@ export async function downloadAudio(
     url,
   ];
 
-  const proc = Bun.spawn(args, {
-    stdout: 'inherit',
-    stderr: 'inherit',
-  });
-
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    throw new Error(`Download failed (yt-dlp exit code: ${exitCode})`);
-  }
+  await runDownload(args);
 
   return outputDir;
 }

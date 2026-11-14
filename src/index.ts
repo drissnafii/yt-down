@@ -14,6 +14,7 @@ import {
   type VideoInfo,
 } from './yt-dlp.ts';
 import { isValidYouTubeUrl, formatDuration } from './utils.ts';
+import { DownloadCancelledError } from './download-recovery.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -192,6 +193,11 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
     );
   } catch (error) {
     console.log('');
+    if (error instanceof DownloadCancelledError) {
+      p.outro(chalk.dim(error.message));
+      process.exitCode = 130;
+      return;
+    }
     const msg = error instanceof Error ? error.message : String(error);
     p.log.error(chalk.red(`❌ ${msg}`));
     p.outro(chalk.dim('Download failed. Please try again.'));
@@ -245,6 +251,11 @@ async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void
     );
   } catch (error) {
     console.log('');
+    if (error instanceof DownloadCancelledError) {
+      p.outro(chalk.dim(error.message));
+      process.exitCode = 130;
+      return;
+    }
     const msg = error instanceof Error ? error.message : String(error);
     p.log.error(chalk.red(`❌ ${msg}`));
     p.outro(chalk.dim('Download failed. Please try again.'));
