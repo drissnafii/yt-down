@@ -46,6 +46,23 @@ bun run bin/yt-down.ts
 
 Downloads are saved to `~/Videos/yt-down/`.
 
+### Browser cookies
+
+yt-down automatically uses an existing Zen cookie database (including Arch's
+`~/.config/zen`, legacy `~/.zen`, and Flatpak profiles), then falls back to
+Firefox. If neither is available, it runs without browser cookies. Zen profiles
+are read using yt-dlp's Firefox cookie reader; the most recently used cookie
+database is selected. Open Zen and visit YouTube first if you need to sign in.
+
+Override cookie selection when needed:
+
+```bash
+YT_DLP_COOKIES=zen yt-down
+YT_DLP_COOKIES=chrome yt-down
+YT_DLP_COOKIES="firefox:/path/to/zen/profile" yt-down
+YT_DLP_COOKIES=none yt-down
+```
+
 ## Global Install
 
 ```bash

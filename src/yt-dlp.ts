@@ -4,6 +4,7 @@
  */
 
 import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
+import { getCookieArgs } from './cookies.ts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -92,13 +93,6 @@ function getJsRuntimeArgs(): string[] {
   return args;
 }
 
-function getCookieArgs(): string[] {
-  // Automatically pass Firefox cookies so YouTube bot-checks are bypassed.
-  // Controlled by the YT_DLP_COOKIES env var (set to 'none' to disable).
-  const browser = Bun.env.YT_DLP_COOKIES ?? 'firefox';
-  return browser === 'none' ? [] : ['--cookies-from-browser', browser];
-}
-
 function getBaseArgs(): string[] {
   return [YT_DLP_BIN, ...getJsRuntimeArgs(), ...getCookieArgs(), '--no-playlist'];
 }
@@ -133,7 +127,8 @@ function isSupportedBunVersion(version: string): boolean {
     return false;
   }
 
-  const [, major, minor] = match.map(Number);
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
 
   // Bun >= 1.2 is supported as a yt-dlp JS runtime (no upper cap).
   return major > 1 || (major === 1 && minor >= 2);
