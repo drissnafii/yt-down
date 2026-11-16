@@ -1,0 +1,21 @@
+.yt-down-content { width: 380px; padding: 12px 16px; spacing: 12px; }
+.yt-down-heading { font-size: 1.25em; font-weight: bold; }
+.yt-down-subtitle { font-size: 0.9em; color: #aaa; }
+.yt-down-title { font-weight: bold; }
+.yt-down-actions { spacing: 8px; }
+.yt-down-action { padding: 8px 14px; border-radius: 8px; background-color: rgba(128,128,128,0.2); }
+.yt-down-action:hover, .yt-down-action:focus { background-color: rgba(128,128,128,0.35); }
+.yt-down-primary { background-color: -st-accent-color; color: -st-accent-fg-color; }
+.yt-down-primary:hover, .yt-down-primary:focus { background-color: -st-accent-color; }
+.yt-down-action:insensitive { opacity: 0.45; }
+.yt-down-status { font-size: 0.9em; }
+.yt-down-error { color: #f66151; }
+.yt-down-progress { height: 6px; border-radius: 3px; background-color: rgba(128,128,128,0.25); }
+.yt-down-progress-fill { height: 6px; border-radius: 3px; background-color: -st-accent-color; }
+.yt-down-formats { max-height: 260px; }
+
+/* GNOME 45–46 predate Shell's configurable accent colors. */
+.yt-down-legacy .yt-down-primary,
+.yt-down-legacy .yt-down-primary:hover,
+.yt-down-legacy .yt-down-primary:focus { background-color: #3584e4; color: #ffffff; }
+.yt-down-legacy .yt-down-progress-fill { background-color: #3584e4; }

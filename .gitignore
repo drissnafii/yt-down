@@ -3,3 +3,5 @@ bun.lock
 .DS_Store
 /bin/yt-down-bin
 /benchmark-results*.json
+
+/dist/

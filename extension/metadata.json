@@ -1,0 +1,17 @@
+{
+  "uuid": "yt-down@drissnafii",
+  "name": "yt-down",
+  "description": "Download YouTube videos and audio from the panel using the yt-down backend.",
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
+  "url": "https://github.com/drissnafii/yt-down",
+  "settings-schema": "org.gnome.shell.extensions.yt-down",
+  "version": 1
+}

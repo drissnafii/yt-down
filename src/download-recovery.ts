@@ -14,6 +14,8 @@ export interface RecoveryOptions {
   initialArgs?: string[];
   signal?: AbortSignal;
   onRetry?: (message: string) => void;
+  /** Capture output instead of forwarding it to the terminal. */
+  onOutput?: (text: string, stream: 'stdout' | 'stderr') => void;
   /** Override the backoff schedule for embedders and tests. */
   retryDelaysMs?: readonly number[];
 }
@@ -69,7 +71,7 @@ export async function runDownload(args: string[], options: RecoveryOptions = {})
 
   try {
     while (!signal.aborted) {
-      const result = await attempt([...nextArgs, ...RECOVERY_ARGS], signal);
+      const result = await attempt([...nextArgs, ...RECOVERY_ARGS], signal, options.onOutput);
       nextArgs = args;
       if (signal.aborted || result.cancelled) throw new DownloadCancelledError();
       if (result.exitCode === 0) return;
@@ -100,7 +102,7 @@ export async function runDownload(args: string[], options: RecoveryOptions = {})
   }
 }
 
-async function attempt(args: string[], signal: AbortSignal) {
+async function attempt(args: string[], signal: AbortSignal, onOutput?: (text: string, stream: 'stdout' | 'stderr') => void) {
   const grouped = process.platform !== 'win32';
   const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore', detached: grouped });
   const kill = (signal: 'SIGINT' | 'SIGKILL') => {
@@ -123,8 +125,8 @@ async function attempt(args: string[], signal: AbortSignal) {
   if (signal.aborted) stop();
   try {
     const [stdout, errors] = await Promise.all([
-      forward(proc.stdout, process.stdout),
-      forward(proc.stderr, process.stderr),
+      forward(proc.stdout, process.stdout, 'stdout', onOutput),
+      forward(proc.stderr, process.stderr, 'stderr', onOutput),
     ]);
     const stderr = `${stdout}\n${errors}`;
     const exitCode = await proc.exited;
@@ -135,12 +137,14 @@ async function attempt(args: string[], signal: AbortSignal) {
   }
 }
 
-async function forward(stream: ReadableStream<Uint8Array>, destination: NodeJS.WriteStream): Promise<string> {
+async function forward(stream: ReadableStream<Uint8Array>, destination: NodeJS.WriteStream, source: 'stdout' | 'stderr', onOutput?: (text: string, stream: 'stdout' | 'stderr') => void): Promise<string> {
   const decoder = new TextDecoder();
   let tail = '';
   for await (const chunk of stream) {
-    destination.write(chunk);
-    tail = (tail + decoder.decode(chunk, { stream: true })).slice(-32_768);
+    const text = decoder.decode(chunk, { stream: true });
+    if (onOutput) onOutput(text, source);
+    else destination.write(chunk);
+    tail = (tail + text).slice(-32_768);
   }
   return tail + decoder.decode();
 }
