@@ -179,3 +179,112 @@ live YouTube download using cached metadata.
 ## License
 
 MIT
+
+## GNOME Shell extension (TypeScript)
+
+The panel extension lives in `extension/` and supports GNOME Shell **45+**
+(currently declared versions: **45–51**; runtime tested on **51**). It adapts to
+the older GNOME 45–47 widget APIs. Future GNOME releases require compatibility
+checks and an explicit metadata update before they can be enabled. Paste
+a YouTube URL, press **Next**, then select a video quality or an **Audio only**
+option to start. The popup shows transfer progress, speed and remaining time.
+Downloads continue when the popup closes; **Cancel** keeps partial files for
+resuming. Completion and errors also appear as desktop notifications.
+
+The frontend is TypeScript compiled to readable GJS ES modules. It launches a
+bundled copy of **this repository's backend** through `Gio.Subprocess`, using
+asynchronous pipe reads. The backend retains the CLI's cookie selection, format
+choices, transfer settings and interruption recovery. Metadata is refreshed when
+you select a format, then reused for that download. The terminal CLI still works
+as before.
+
+### Build and install
+
+Install Bun with mise if needed, then install the repo dependencies:
+
+```bash
+mise use --global bun@1.4.4
+bun install
+bun run extension:install
+```
+
+The build also needs `glib-compile-schemas` (GLib); `extension:pack` needs `zip`.
+Keep `yt-dlp` and `ffmpeg` installed and available to your desktop session.
+Installation copies the build to
+`$XDG_DATA_HOME/gnome-shell/extensions/yt-down@drissnafii`
+(default `~/.local/share/gnome-shell/extensions/yt-down@drissnafii`).
+
+**Log out of GNOME completely and log back in after the first installation**,
+then enable it. On Wayland, closing the terminal or locking the screen does not
+reload GNOME Shell:
+
+```bash
+gnome-extensions enable yt-down@drissnafii
+```
+
+If enabling reports `Extension “yt-down@drissnafii” does not exist`, the running
+shell has not discovered the installed files yet. Log out and back in, then
+check `gnome-extensions list` and run the enable command again.
+
+Open **Settings** in the panel popup to change the download folder or Bun
+executable. By default downloads go to your XDG Videos directory under `yt-down/`.
+Bun is detected from the desktop PATH, mise's standard shims directory,
+`~/.local/bin`, or `~/.bun/bin`. If needed, copy the absolute path printed by
+`mise which bun` into the Bun setting. Session environment variables such as
+`YT_DLP_COOKIES`, `YT_DLP_BIN` and `YT_DOWN_FRAGMENTS` apply to the backend;
+variables exported only in a terminal are not automatically visible to GNOME.
+
+Build a ZIP for manual installation or sharing:
+
+```bash
+bun run extension:pack
+# dist/yt-down@drissnafii.shell-extension.zip
+gnome-extensions install --force dist/yt-down@drissnafii.shell-extension.zip
+```
+
+This package bundles the Bun backend but still requires Bun, yt-dlp and ffmpeg on
+the receiving machine. This is a local install package; it has not been submitted
+to extensions.gnome.org for review.
+
+### Development
+
+```bash
+bun run typecheck
+bun run extension:typecheck
+bun test
+bun run extension:build
+```
+
+The build is written to `dist/yt-down@drissnafii/`. After changing the extension,
+rebuild and reinstall, then restart your GNOME session to load updated ES modules.
+For an isolated graphical test on GNOME 49 and newer, use
+`dbus-run-session -- gnome-shell --devkit`; on GNOME 45–48, use
+`dbus-run-session -- gnome-shell --nested --wayland`.
+
+Inspect shell errors with:
+
+```bash
+journalctl -f -o cat /usr/bin/gnome-shell
+```
+
+GNOME references: [TypeScript extensions](https://gjs.guide/extensions/development/typescript.html),
+[asynchronous subprocesses](https://gjs.guide/guides/gio/subprocesses.html),
+and [GNOME 51 changes](https://gjs.guide/extensions/upgrading/gnome-shell-51.html).
+
+### JSON backend interface
+
+Other frontends can use the same newline-delimited JSON API:
+
+```bash
+bun run bin/yt-down.ts --json formats 'https://youtu.be/VIDEO_ID'
+bun run bin/yt-down.ts --json download 'https://youtu.be/VIDEO_ID' video '137+140' "$HOME/Videos/yt-down"
+bun run bin/yt-down.ts --json download 'https://youtu.be/VIDEO_ID' audio '140' "$HOME/Videos/yt-down"
+```
+
+Each stdout line is a JSON event: `status`, `formats`, `progress`, `file`,
+`complete`, `cancelled`, or `error`. Format choices include their ID and mode.
+Progress percentages apply to the current stream, so the percentage can restart
+when the audio stream begins. Unknown totals produce `percent: null`; completion
+is reported only after postprocessing succeeds. SIGTERM or SIGINT cancels the
+backend and its active downloader; errors exit with status 1 and cancellation
+with status 130. Types are defined in `src/protocol.ts`.

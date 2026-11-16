@@ -6,9 +6,14 @@
  */
 
 import { main } from '../src/index.ts';
+import { runJsonCommand } from '../src/json-cli.ts';
 
 try {
-  await main();
+  if (process.argv[2] === '--json') {
+    await runJsonCommand(process.argv.slice(3));
+  } else {
+    await main();
+  }
 } catch (error) {
   if (error instanceof Error && error.message.includes('cancel')) {
     // User cancelled — exit silently

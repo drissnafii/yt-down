@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { runDownload } from './download-recovery.ts';
 import { withMetadataFile } from './metadata-cache.ts';
 import { getTransferArgs } from './transfer-options.ts';
+import { createProgressParser } from './json-cli.ts';
+import type { BackendEvent } from './protocol.ts';
 
 // Use the real downloader when installed; all traffic stays on loopback.
 const integration = test.skipIf(!Bun.which('yt-dlp'));
@@ -58,6 +60,8 @@ integration('real yt-dlp resumes a dropped HTTP transfer using a byte range', as
 }, 15_000);
 
 integration('real yt-dlp preserves completed HLS fragments when a later one fails', async () => {
+  // Sequential transfer makes the completed-before-failure ordering deterministic.
+  // Parallel transfer behavior has its own test below.
   const fragments = [Buffer.alloc(1024, 1), Buffer.alloc(1024, 2), Buffer.alloc(1024, 3)];
   const requests = [0, 0, 0];
   server = createServer((req, res) => {
@@ -74,7 +78,7 @@ integration('real yt-dlp preserves completed HLS fragments when a later one fail
     res.end(fragments[index]);
   });
   const base = await listen();
-  await runDownload(['yt-dlp', '--ignore-config', '--no-playlist', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'native' }), '--fixup', 'never', '-o', join(dir, 'video.ts'), `${base}/video.m3u8`], {
+  await runDownload(['yt-dlp', '--ignore-config', '--no-playlist', '--proxy', '', ...getTransferArgs({ fragments: '1', downloader: 'native' }), '--fixup', 'never', '-o', join(dir, 'video.ts'), `${base}/video.m3u8`], {
     retryDelaysMs: [1], onRetry: () => {}, signal: AbortSignal.timeout(10_000),
   });
   expect(requests).toEqual([1, 2, 1]);
@@ -192,4 +196,24 @@ test.skipIf(!Bun.which('yt-dlp') || !Bun.which('aria2c'))('real aria2 HTTP rejec
   expect(rejected).toBe(true);
   expect(refreshed).toBe(true);
   expect(readFileSync(join(dir, 'video.mp4'))).toEqual(content);
+}, 15_000);
+
+integration('real yt-dlp emits machine progress and final filenames without simulating the download', async () => {
+  const content = Buffer.alloc(64 * 1024, 42);
+  server = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': content.length });
+    res.end(content);
+  });
+  const base = await listen();
+  const events: BackendEvent[] = [];
+  const parsers = { stdout: createProgressParser(event => events.push(event)), stderr: createProgressParser(event => events.push(event)) };
+  const output = join(dir, 'actual video.mp4');
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', '--no-playlist', '--newline', '--progress',
+    '--progress-template', 'download:yt-down-progress:%(progress)j',
+    '--print', 'after_move:yt-down-file:%(filepath)j', '-o', output, `${base}/media.mp4`], {
+    signal: AbortSignal.timeout(10_000), onOutput: (text, stream) => parsers[stream](text),
+  });
+  expect(readFileSync(output)).toEqual(content);
+  expect(events.some(event => event.type === 'progress' && event.percent === 100)).toBe(true);
+  expect(events).toContainEqual({ type: 'file', path: output });
 }, 15_000);

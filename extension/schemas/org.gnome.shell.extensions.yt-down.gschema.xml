@@ -1,0 +1,14 @@
+<schemalist>
+  <schema id="org.gnome.shell.extensions.yt-down" path="/org/gnome/shell/extensions/yt-down/">
+    <key name="bun-path" type="s">
+      <default>''</default>
+      <summary>Bun executable</summary>
+      <description>Absolute Bun path or executable name. Empty means automatic detection.</description>
+    </key>
+    <key name="output-directory" type="s">
+      <default>''</default>
+      <summary>Download directory</summary>
+      <description>Absolute path. Empty means the user's Videos/yt-down directory.</description>
+    </key>
+  </schema>
+</schemalist>

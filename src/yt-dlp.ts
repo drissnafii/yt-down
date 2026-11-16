@@ -5,11 +5,12 @@
 
 import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
 import { getCookieArgs } from './cookies.ts';
-import { runDownload } from './download-recovery.ts';
+import { runDownload, type RecoveryOptions } from './download-recovery.ts';
 import { mkdir } from 'node:fs/promises';
 import { withMetadataFile } from './metadata-cache.ts';
 import { getTransferArgs } from './transfer-options.ts';
 import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,9 +74,9 @@ export interface FormattedAudioFormat {
 
 // Prefer ~/.local/bin/yt-dlp (installed via pipx, kept up-to-date) over
 // the system package (typically outdated). Falls back to env override or PATH.
-const LOCAL_YT_DLP = '/home/dendo/.local/bin/yt-dlp';
+const LOCAL_YT_DLP = join(homedir(), '.local/bin/yt-dlp');
 const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? (Bun.file(LOCAL_YT_DLP).size > 0 ? LOCAL_YT_DLP : 'yt-dlp');
-const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
+const OUTPUT_DIR = join(homedir(), 'Videos/yt-down');
 
 function getJsRuntimeArgs(): string[] {
   if (Bun.env.YT_DLP_JS_RUNTIME) {
@@ -115,18 +116,9 @@ function getSupportedRuntime(command: string, runtime = command): string | null 
 }
 
 function getSupportedBunRuntime(): string | null {
-  const bunPath = getSupportedRuntime('bun');
-  if (!bunPath) {
-    return null;
-  }
-
-  const proc = Bun.spawnSync(['bun', '--version'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  });
-
-  const version = proc.stdout.toString().trim();
-  return isSupportedBunVersion(version) ? 'bun' : null;
+  // This backend is already running in Bun. An absolute path also works when
+  // launched by GNOME without an interactive shell's runtime PATH.
+  return isSupportedBunVersion(Bun.version) ? `bun:${process.execPath}` : null;
 }
 
 function isSupportedBunVersion(version: string): boolean {
@@ -147,10 +139,11 @@ function isSupportedBunVersion(version: string): boolean {
 /**
  * Fetch video metadata JSON using yt-dlp -j
  */
-export async function getVideoInfo(url: string): Promise<VideoInfo> {
+export async function getVideoInfo(url: string, signal?: AbortSignal): Promise<VideoInfo> {
   const proc = Bun.spawn([...getBaseArgs(), '-j', url], {
     stdout: 'pipe',
     stderr: 'pipe',
+    signal,
   });
 
   const [stdout, stderr] = await Promise.all([
@@ -311,8 +304,9 @@ export async function downloadVideo(
   formatId: string,
   outputDir: string = OUTPUT_DIR,
   info?: VideoInfo,
+  options?: RecoveryOptions,
 ): Promise<string> {
-  return download(url, formatId, outputDir, info, ['--merge-output-format', 'mp4']);
+  return download(url, formatId, outputDir, info, ['--merge-output-format', 'mp4'], options);
 }
 
 /** Download audio using the same metadata reuse, transfer, and recovery settings. */
@@ -321,11 +315,12 @@ export async function downloadAudio(
   formatId: string,
   outputDir: string = OUTPUT_DIR,
   info?: VideoInfo,
+  options?: RecoveryOptions,
 ): Promise<string> {
-  return download(url, formatId, outputDir, info);
+  return download(url, formatId, outputDir, info, [], options);
 }
 
-async function download(url: string, formatId: string, outputDir: string, info?: VideoInfo, extra: string[] = []): Promise<string> {
+async function download(url: string, formatId: string, outputDir: string, info?: VideoInfo, extra: string[] = [], options: RecoveryOptions = {}): Promise<string> {
   const outputPath = resolve(outputDir);
   const transferArgs = getTransferArgs();
   // aria2 may create sparse partial files. Keep them apart from native partials,
@@ -335,10 +330,13 @@ async function download(url: string, formatId: string, outputDir: string, info?:
     ...getBaseArgs(), ...transferArgs,
     '-f', formatId, '--paths', outputPath, '-o', '%(title)s.%(ext)s',
     ...extra, '--progress',
+    ...(options.onOutput ? ['--newline', '--progress-delta', '0.3', '--progress-template',
+      'download:yt-down-progress:%(progress)j', '--print', 'after_move:yt-down-file:%(filepath)j'] : []),
   ];
   await mkdir(outputDir, { recursive: true });
   await withMetadataFile(info, async path => {
     await runDownload([...args, url], {
+      ...options,
       initialArgs: path ? [...args, '--load-info-json', path] : undefined,
     });
   });
