@@ -12,6 +12,10 @@ export default class YtDownPreferences extends ExtensionPreferences {
     const directory = new Adw.EntryRow({ title: 'Download folder (empty = Videos/yt-down)' });
     settings.bind('bun-path', runtime, 'text', Gio.SettingsBindFlags.DEFAULT);
     settings.bind('output-directory', directory, 'text', Gio.SettingsBindFlags.DEFAULT);
+    const clipboard = new Adw.SwitchRow({ title: 'Use YouTube links from clipboard',
+      subtitle: 'Check when opening the panel. Downloads always require a click.' });
+    settings.bind('clipboard-autofetch', clipboard, 'active', Gio.SettingsBindFlags.DEFAULT);
+    group.add(clipboard);
     group.add(runtime);
     group.add(directory);
     page.add(group);

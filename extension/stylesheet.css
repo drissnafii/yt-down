@@ -1,20 +1,44 @@
-.yt-down-content { width: 380px; padding: 12px 16px; spacing: 12px; }
-.yt-down-heading { font-size: 1.25em; font-weight: bold; }
-.yt-down-subtitle { font-size: 0.9em; color: #aaa; }
-.yt-down-title { font-weight: bold; }
-.yt-down-actions { spacing: 8px; }
-.yt-down-action { padding: 8px 14px; border-radius: 8px; background-color: rgba(128,128,128,0.2); }
-.yt-down-action:hover, .yt-down-action:focus { background-color: rgba(128,128,128,0.35); }
+/* Shell supplies the glass surface and accent; content stays legible on top. */
+.yt-down-popup .popup-menu-content { padding: 8px 0; border-radius: 20px; }
+.yt-down-content, .yt-down-footer { width: 376px; padding: 8px 16px; spacing: 12px; }
+.yt-down-header { spacing: 8px; }
+.yt-down-heading { font-size: 1.25em; font-weight: 700; }
+.yt-down-icon-button { min-width: 40px; min-height: 40px; border-radius: 12px; padding: 2px; }
+.yt-down-icon-button:hover, .yt-down-icon-button:focus { background-color: rgba(128,128,128,0.24); }
+.yt-down-input { spacing: 8px; }
+.yt-down-url-field { border-radius: 10px; padding-right: 4px; background-color: rgba(128,128,128,0.16); }
+.yt-down-clear { min-width: 28px; min-height: 28px; border-radius: 8px; padding: 2px; }
+.yt-down-clear:hover, .yt-down-clear:focus { background-color: rgba(128,128,128,0.24); }
+.yt-down-entry { min-width: 0; min-height: 28px; border: none; border-radius: 10px; padding: 8px 10px; background-color: transparent; }
 .yt-down-primary { background-color: -st-accent-color; color: -st-accent-fg-color; }
 .yt-down-primary:hover, .yt-down-primary:focus { background-color: -st-accent-color; }
-.yt-down-action:insensitive { opacity: 0.45; }
-.yt-down-status { font-size: 0.9em; }
-.yt-down-error { color: #f66151; }
+.yt-down-video-info { padding: 4px 0; }
+.yt-down-title { font-weight: 700; }
+.yt-down-secondary { font-size: 0.9em; }
+.yt-down-skeleton { spacing: 16px; padding: 16px; }
+.yt-down-skeleton-line { height: 12px; border-radius: 6px; background-color: rgba(128,128,128,0.25); }
+.yt-down-choices { padding: 0 8px; }
+.yt-down-choice { min-height: 28px; padding: 8px 12px; margin: 0 8px; border-radius: 8px; spacing: 6px; }
+.yt-down-choice-label { font-weight: 400; }
+.yt-down-resolution-tag { font-size: 0.75em; padding-bottom: 4px; }
+.yt-down-last-used .yt-down-choice-label { font-weight: 600; }
+.yt-down-choice-size { font-size: 0.9em; padding-left: 8px; }
+.yt-down-quality-hint { font-size: 0.85em; font-weight: 600; padding: 4px 8px; border-radius: 6px; background-color: rgba(128,128,128,0.18); }
+.yt-down-more { min-height: 36px; margin: 0 16px; border-radius: 12px; }
+.yt-down-popup .popup-sub-menu { max-height: 240px; }
+.yt-down-download { spacing: 8px; padding: 12px; border-radius: 12px; background-color: rgba(128,128,128,0.12); }
 .yt-down-progress { height: 6px; border-radius: 3px; background-color: rgba(128,128,128,0.25); }
 .yt-down-progress-fill { height: 6px; border-radius: 3px; background-color: -st-accent-color; }
-.yt-down-formats { max-height: 260px; }
-
-/* GNOME 45–46 predate Shell's configurable accent colors. */
+.yt-down-status-row { spacing: 8px; }
+.yt-down-status { font-size: 0.9em; }
+.yt-down-error { color: #f66151; }
+.yt-down-success { color: #8ff0a4; }
+.yt-down-cancel { padding: 8px; border-radius: 8px; font-size: 0.9em; }
+.yt-down-cancel:hover, .yt-down-cancel:focus { background-color: rgba(128,128,128,0.24); }
+.yt-down-completion { spacing: 8px; }
+.yt-down-action { min-height: 40px; padding: 0 12px; border-radius: 12px; }
+.yt-down-action-content { spacing: 8px; }
+.yt-down-action:hover, .yt-down-action:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-legacy .yt-down-primary,
 .yt-down-legacy .yt-down-primary:hover,
 .yt-down-legacy .yt-down-primary:focus { background-color: #3584e4; color: #ffffff; }
