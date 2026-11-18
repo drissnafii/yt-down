@@ -90,3 +90,9 @@ test('cache is cleaned after failures and no file is needed without metadata', a
   expect(existsSync(path!)).toBe(false);
   await withMetadataFile(undefined, async value => { expect(value).toBeUndefined(); });
 });
+
+test('a video with no separate audio track does not request nonexistent bestaudio', () => {
+  const [video] = parseVideoFormats({ ...info, formats: [{ format_id: 'http', ext: 'mp4', height: 720, filesize: 1024 }] });
+  expect(video?.formatId).toBe('http');
+  expect(video?.filesize).toBe(1024);
+});

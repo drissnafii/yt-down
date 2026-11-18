@@ -11,12 +11,14 @@ import { withMetadataFile } from './metadata-cache.ts';
 import { getTransferArgs } from './transfer-options.ts';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { getOutputDirectory } from './output-directory.ts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface YtDlpFormat {
   format_id: string;
   ext: string;
+  video_ext?: string;
   resolution?: string;
   width?: number | null;
   height?: number | null;
@@ -29,6 +31,13 @@ export interface YtDlpFormat {
   abr?: number | null;   // audio bitrate
   asr?: number | null;   // audio sample rate
   format_note?: string;
+}
+
+/** Generic direct media often has an extension but no codecs or dimensions. */
+export function hasVideoFormats(info: VideoInfo): boolean {
+  return (info.formats ?? []).some(f => f.vcodec !== 'none' && Boolean(
+    f.vcodec || f.height || (f.video_ext && f.video_ext !== 'none')
+    || /^(mp4|webm|mkv|mov|flv|avi|m4v|ts|ogv)$/i.test(f.ext)));
 }
 
 export interface VideoInfo {
@@ -76,7 +85,7 @@ export interface FormattedAudioFormat {
 // the system package (typically outdated). Falls back to env override or PATH.
 const LOCAL_YT_DLP = join(homedir(), '.local/bin/yt-dlp');
 const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? (Bun.file(LOCAL_YT_DLP).size > 0 ? LOCAL_YT_DLP : 'yt-dlp');
-const OUTPUT_DIR = join(homedir(), 'Videos/yt-down');
+const OUTPUT_DIR = getOutputDirectory();
 
 function getJsRuntimeArgs(): string[] {
   if (Bun.env.YT_DLP_JS_RUNTIME) {
@@ -107,12 +116,7 @@ function getBaseArgs(): string[] {
 }
 
 function getSupportedRuntime(command: string, runtime = command): string | null {
-  const proc = Bun.spawnSync(['which', command], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  });
-
-  return proc.exitCode === 0 ? runtime : null;
+  return Bun.which(command) ? runtime : null;
 }
 
 function getSupportedBunRuntime(): string | null {
@@ -182,7 +186,7 @@ export function parseVideoFormats(info: VideoInfo): FormattedFormat[] {
   const audio = available.filter(isAudioOnly).at(-1);
   const groups = new Map<number, YtDlpFormat[]>();
   for (const format of available) {
-    if (!format.vcodec || format.vcodec === 'none' || !format.height || format.height <= 0) continue;
+    if (format.vcodec === 'none' || !format.height || format.height <= 0) continue;
     const group = groups.get(format.height) ?? [];
     group.push(format);
     groups.set(format.height, group);
@@ -192,7 +196,7 @@ export function parseVideoFormats(info: VideoInfo): FormattedFormat[] {
     const combined = Boolean(fmt.acodec && fmt.acodec !== 'none');
     const videoSize = estimateSize(fmt, info.duration);
     const audioSize = audio ? estimateSize(audio, info.duration) : null;
-    const size = combined ? videoSize : videoSize && audioSize
+    const size = combined || !audio ? videoSize : videoSize && audioSize
       ? { bytes: videoSize.bytes + audioSize.bytes, estimated: videoSize.estimated || audioSize.estimated }
       : null;
     const codec = [getCodecLabel(fmt.vcodec), getAudioCodecLabel(combined ? fmt.acodec : audio?.acodec)].filter(Boolean).join('+');
@@ -200,7 +204,7 @@ export function parseVideoFormats(info: VideoInfo): FormattedFormat[] {
     const sizeLabel = size ? `${size.estimated ? '~ ' : ''}${formatBytes(size.bytes)}` : '~ unknown';
     const fps = fmt.fps ?? null;
     return {
-      formatId: combined ? fmt.format_id : `${fmt.format_id}+${audio?.format_id ?? 'bestaudio'}`,
+      formatId: combined || !audio ? fmt.format_id : `${fmt.format_id}+${audio.format_id}`,
       resolution,
       height: fmt.height!,
       ext: fmt.ext,

@@ -78,7 +78,7 @@ if (process.argv[2] !== '--session') {
       XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'), XDG_CACHE_HOME: join(dir, 'cache'),
       LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DOWN_SMOKE_BUN: process.execPath };
     await command(['dbus-run-session', '--', process.execPath, import.meta.path, '--session'], env);
-    console.log('GNOME UI: search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
+    console.log('GNOME UI: multi-site paste, opt-in automatic downloads, clipboard safeguards, search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
   } finally {
     await rm(dir, { recursive: true, force: true });
     const after = await command(['gsettings', 'get', 'org.gnome.shell', 'enabled-extensions']);
@@ -170,6 +170,16 @@ if (process.argv[2] !== '--session') {
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.entry)'), value => value.includes("'true'"), 're-enable after cleanup');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_string('bun-path', " + JSON.stringify(process.env.YT_DOWN_SMOKE_BUN) + "); e.settings.set_boolean('clipboard-autofetch', false); e.button.menu.open(); e.entry.set_text('https://vimeo.com/123'); return 'OK'; })()");
+    await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'pasted non-YouTube URL fetches without Enter');
+    await check("e.jobs.length === 0", 'direct downloading is off by default');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_boolean('download-on-paste', true); e.settings.set_string('last-choice', 'video:720:quality'); e.entry.set_text('https://de.pornhub.com/view_video.php?viewkey=6af5118b07e59'); return 'OK'; })()");
+    await waitFor(() => evaluate('globalThis.__getYtDown().jobs.length'), value => value.includes("'1'"), 'paste automatically queues download without Enter or a quality click');
+    await check("e.jobs[0].choice.height === 720 && e.entry.get_text() === ''", 'automatic download uses remembered quality and clears input');
+    await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0].state'), value => value.includes('"complete"'), 'automatic download completes');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.clear(); e.settings.set_boolean('clipboard-autofetch', true); imports.gi.St.Clipboard.get_default().set_text(imports.gi.St.ClipboardType.CLIPBOARD, 'https://vimeo.com/456'); e.checkClipboard(); return 'OK'; })()");
+    await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'clipboard detection fetches formats');
+    await check("e.jobs.length === 1", 'clipboard detection does not automatically download');
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);
     const logs = await readLogs();
     if (/JS ERROR|Extension yt-down@drissnafii:|Theme parsing error/.test(logs)) throw new Error(`Shell reported errors:\n${logs}`);

@@ -7,18 +7,20 @@ import * as p from '@clack/prompts';
 import chalk from 'chalk';
 import {
   getVideoInfo,
+  hasVideoFormats,
   parseVideoFormats,
   parseAudioFormats,
   downloadVideo,
   downloadAudio,
   type VideoInfo,
 } from './yt-dlp.ts';
-import { isValidYouTubeUrl, formatDuration } from './utils.ts';
+import { normalizeVideoUrl, formatDuration } from './utils.ts';
 import { DownloadCancelledError } from './download-recovery.ts';
+import { getOutputDirectory } from './output-directory.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
+const OUTPUT_DIR = getOutputDirectory();
 
 type Mode = 'video' | 'podcast';
 
@@ -37,7 +39,7 @@ function showLogo(): void {
   console.log(white('  ⬡ ⬢ ⬡') + '     ' + red('   ██║       ██║   ') + '        ' + red('██████╔╝ ╚██████╔╝ ╚███╔███╔╝ ██║ ╚████║'));
   console.log(white('   ⬢ ⬡') + '      ' + red('   ╚═╝       ╚═╝   ') + '        ' + red('╚═════╝   ╚═════╝   ╚══╝╚══╝  ╚═╝  ╚═══╝'));
   console.log('');
-  console.log(dim('        Interactive YouTube Downloader  v1.0'));
+  console.log(dim('        Interactive Video Downloader  v1.0'));
   console.log('');
 }
 
@@ -47,7 +49,7 @@ export async function main(): Promise<void> {
   showLogo();
 
   // Step 1 — Intro
-  p.intro(chalk.bgRed.white.bold(' ⬢  yt-down  ⬢ ') + chalk.dim('  Interactive YouTube Downloader'));
+  p.intro(chalk.bgRed.white.bold(' ⬢  yt-down  ⬢ ') + chalk.dim('  Interactive Video Downloader'));
 
   // Step 2 — Select mode
   const mode = await p.select({
@@ -66,14 +68,14 @@ export async function main(): Promise<void> {
 
   // Step 3 — Paste URL
   const url = await p.text({
-    message: 'Paste YouTube URL:',
+    message: 'Paste video URL:',
     placeholder: 'https://youtube.com/watch?v=...',
     validate(value) {
       if (!value || value.trim().length === 0) {
         return 'URL is required';
       }
-      if (!isValidYouTubeUrl(value)) {
-        return 'Invalid YouTube URL. Supported: youtube.com/watch, youtu.be/, youtube.com/shorts/';
+      if (!normalizeVideoUrl(value)) {
+        return 'Enter a valid HTTP or HTTPS video URL.';
       }
     },
   });
@@ -89,7 +91,7 @@ export async function main(): Promise<void> {
 
   let info: VideoInfo;
   try {
-    info = await getVideoInfo(url as string);
+    info = await getVideoInfo(normalizeVideoUrl(url as string)!);
     s.stop(chalk.green('✓') + ' Video info fetched!');
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -114,9 +116,9 @@ export async function main(): Promise<void> {
 
   // Branch based on mode
   if (mode === 'video') {
-    await handleVideoDownload(url as string, info);
+    await handleVideoDownload(normalizeVideoUrl(url as string)!, info);
   } else {
-    await handlePodcastDownload(url as string, info);
+    await handlePodcastDownload(normalizeVideoUrl(url as string)!, info);
   }
 }
 
@@ -125,7 +127,7 @@ export async function main(): Promise<void> {
 async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> {
   const formats = parseVideoFormats(info);
 
-  if (formats.length === 0) {
+  if (!hasVideoFormats(info)) {
     p.log.error(chalk.red('❌ No downloadable video formats found.'));
     p.outro(chalk.dim('This video may be restricted or unsupported.'));
     return;
