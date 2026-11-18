@@ -217,3 +217,20 @@ integration('real yt-dlp emits machine progress and final filenames without simu
   expect(events.some(event => event.type === 'progress' && event.percent === 100)).toBe(true);
   expect(events).toContainEqual({ type: 'file', path: output });
 }, 15_000);
+
+integration('generic direct MP4 metadata remains downloadable without codec or resolution information', async () => {
+  server = createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'video/mp4' });
+    res.end(Buffer.alloc(1024));
+  });
+  const base = await listen();
+  const proc = Bun.spawn([process.execPath, join(import.meta.dir, '../bin/yt-down.ts'), '--json', 'formats', `${base}/video.mp4`], {
+    env: { ...process.env, YT_DLP_BIN: Bun.which('yt-dlp')!, YT_DLP_COOKIES: 'none' }, stdout: 'pipe', stderr: 'pipe',
+  });
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  expect(code).toBe(0);
+  expect(stderr).toBe('');
+  const event = JSON.parse(stdout.trim().split('\n').at(-1)!);
+  expect(event.type).toBe('formats');
+  expect(event.choices).toContainEqual({ id: 'best', mode: 'video', label: 'Best quality', sizeLabel: 'Auto' });
+}, 15_000);

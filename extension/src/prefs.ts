@@ -13,14 +13,18 @@ export default class YtDownPreferences extends ExtensionPreferences {
     const directory = new Adw.EntryRow({ title: 'Download folder (empty = Videos/yt-down)' });
     settings.bind('bun-path', runtime, 'text', Gio.SettingsBindFlags.DEFAULT);
     settings.bind('output-directory', directory, 'text', Gio.SettingsBindFlags.DEFAULT);
-    const clipboard = new Adw.SwitchRow({ title: 'Use YouTube links from clipboard',
-      subtitle: 'Check when opening the panel. Downloads always require a click.' });
+    const clipboard = new Adw.SwitchRow({ title: 'Use video links from clipboard',
+      subtitle: 'Find formats when opening the panel. Clipboard detection never starts a download.' });
     settings.bind('clipboard-autofetch', clipboard, 'active', Gio.SettingsBindFlags.DEFAULT);
+    const direct = new Adw.SwitchRow({ title: 'Download automatically after pasting',
+      subtitle: 'Start without Enter or a quality click. Use your last quality when available, otherwise best video quality.' });
+    settings.bind('download-on-paste', direct, 'active', Gio.SettingsBindFlags.DEFAULT);
     const parallel = new Adw.SpinRow({ title: 'Simultaneous downloads', subtitle: '1–3 active downloads; extra videos wait in the queue.',
       adjustment: new Gtk.Adjustment({ lower: 1, upper: 3, step_increment: 1, page_increment: 1 }) });
     settings.bind('parallel-downloads', parallel, 'value', Gio.SettingsBindFlags.DEFAULT);
     group.add(parallel);
     group.add(clipboard);
+    group.add(direct);
     group.add(runtime);
     group.add(directory);
     page.add(group);

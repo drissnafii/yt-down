@@ -1,7 +1,7 @@
 {
   "uuid": "yt-down@drissnafii",
   "name": "yt-down",
-  "description": "Download YouTube videos and audio from the panel using the yt-down backend.",
+  "description": "Download videos and audio from sites supported by yt-dlp from the panel using the yt-down backend.",
   "shell-version": [
     "45",
     "46",

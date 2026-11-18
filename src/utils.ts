@@ -40,6 +40,24 @@ export function normalizeYouTubeUrl(input: string): string | null {
   return id ? `https://www.youtube.com/watch?v=${id}` : null;
 }
 
+/** Accept public HTTP(S) video links; yt-dlp determines site support.
+ * Keep non-YouTube paths and query parameters intact (including signed URLs).
+ * This helper also runs in GJS, which has no browser URL global.
+ */
+export function normalizeVideoUrl(input: string): string | null {
+  const value = input.trim().replace(/^[<"']|[>"']$/g, '');
+  const youtube = normalizeYouTubeUrl(value);
+  if (youtube) return youtube;
+  if (/\s|[\\\x00-\x1f\x7f]/.test(value)) return null;
+  const candidate = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  const match = candidate.match(/^(https?):\/\/([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[0-9a-f:]+\])(?::([0-9]{1,5}))?([/?#].*)?$/i);
+  if (!match) return null;
+  const host = match[2]!;
+  if (!host.includes('.') && !host.startsWith('[') && host !== 'localhost') return null;
+  if (host.includes('..') || (match[3] && (Number(match[3]) < 1 || Number(match[3]) > 65535))) return null;
+  return `${match[1]!.toLowerCase()}://${host.toLowerCase()}${match[3] ? `:${match[3]}` : ''}${match[4] ?? '/'}`;
+}
+
 export function isValidYouTubeUrl(url: string): boolean {
   return normalizeYouTubeUrl(url) !== null;
 }

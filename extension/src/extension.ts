@@ -13,8 +13,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Backend, findBun } from './client.js';
 import { MediaOpener } from './media.js';
 import { TaskQueue } from './queue.js';
-import { choiceKey, choiceLabel, qualityBadge, groupChoices, higherQualityHint } from './choices.js';
-import { normalizeYouTubeUrl, formatDuration, formatBytes } from '../../src/utils.js';
+import { choiceKey, choiceLabel, qualityBadge, groupChoices, higherQualityHint, automaticChoice } from './choices.js';
+import { normalizeVideoUrl, formatDuration, formatBytes } from '../../src/utils.js';
 import type { BackendEvent, DownloadChoice } from '../../src/protocol.js';
 
 type Phase = 'idle' | 'searching' | 'ready' | 'error';
@@ -62,6 +62,7 @@ export default class YtDownExtension extends Extension {
   private lastClipboard = '';
   private debounce = 0;
   private suppressEntry = false;
+  private pendingAutoDownload = false;
   private shellMajor = 0;
 
   private column(style = ''): St.BoxLayout {
@@ -126,8 +127,8 @@ export default class YtDownExtension extends Extension {
     const input = new St.BoxLayout({ style_class: 'yt-down-input' });
     this.urlField = new St.BoxLayout({ style_class: 'yt-down-url-field', x_expand: true,
       min_width: 0, natural_width: 0, clip_to_allocation: true });
-    this.entry = new St.Entry({ min_width: 0, natural_width: 0, hint_text: 'Paste a YouTube link…', can_focus: true, x_expand: true,
-      accessible_name: 'YouTube video URL', style_class: 'yt-down-entry' });
+    this.entry = new St.Entry({ min_width: 0, natural_width: 0, hint_text: 'Paste a video link…', can_focus: true, x_expand: true,
+      accessible_name: 'Video URL', style_class: 'yt-down-entry' });
     this.entry.clutter_text.min_width = 0;
     this.entry.clutter_text.natural_width = 0;
     this.clearButton = new St.Button({ can_focus: true, accessible_name: 'Clear link',
@@ -218,11 +219,11 @@ export default class YtDownExtension extends Extension {
     if (this.videoInfo) this.videoInfo.visible = false;
     this.setPhase('idle');
     this.setStatus('Paste a link, or press Enter to find a video.');
-    const url = normalizeYouTubeUrl(this.entry?.get_text() ?? '');
+    const url = normalizeVideoUrl(this.entry?.get_text() ?? '');
     if (url) {
       this.debounce = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
         this.debounce = 0;
-        this.fetchFormats();
+        this.fetchFormats(this.settings?.get_boolean('download-on-paste') ?? false);
         return GLib.SOURCE_REMOVE;
       });
     }
@@ -233,10 +234,10 @@ export default class YtDownExtension extends Extension {
     const entry = this.entry!;
     const current = entry.get_text();
     // Never overwrite a link the user is editing.
-    if (current && normalizeYouTubeUrl(current) !== this.loadedUrl) return;
+    if (current && normalizeVideoUrl(current) !== this.loadedUrl) return;
     St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_clipboard, text) => {
       if (!this.isOpen() || this.busy() || this.entry !== entry || this.entry.get_text() !== current) return;
-      const url = normalizeYouTubeUrl(text ?? '');
+      const url = normalizeVideoUrl(text ?? '');
       if (!url || url === this.lastClipboard || (url === this.loadedUrl && this.phase !== 'idle')) return;
       this.lastClipboard = url;
       this.setEntry(url);
@@ -259,11 +260,12 @@ export default class YtDownExtension extends Extension {
     this.entry?.grab_key_focus();
   }
 
-  private fetchFormats(): void {
+  private fetchFormats(autoDownload = false): void {
     if (this.busy() || !this.entry) return;
     this.clearDebounce();
-    const url = normalizeYouTubeUrl(this.entry.get_text());
-    if (!url) { this.setPhase('error'); this.setStatus('Use a YouTube video, Shorts, or share link.', true); return; }
+    const url = normalizeVideoUrl(this.entry.get_text());
+    if (!url) { this.setPhase('error'); this.setStatus('Enter a valid HTTP or HTTPS video link.', true); return; }
+    this.pendingAutoDownload = autoDownload;
     this.loadedUrl = url;
     this.setEntry(url);
     this.formats?.removeAll();
@@ -291,6 +293,12 @@ export default class YtDownExtension extends Extension {
     this.setStatus(event.choices.length ? 'Ready when you are.' : 'No downloadable formats found.', !event.choices.length);
     this.reveal(this.videoInfo!);
     this.reveal(this.formats!.actor);
+    const autoDownload = this.pendingAutoDownload;
+    this.pendingAutoDownload = false;
+    if (autoDownload && this.settings?.get_boolean('download-on-paste')) {
+      const choice = automaticChoice(event.choices, previous);
+      if (choice) this.download(choice);
+    }
   }
 
   private addChoice(menu: PopupMenu.PopupMenuBase, choice: DownloadChoice, previous: string): void {
@@ -682,6 +690,7 @@ export default class YtDownExtension extends Extension {
     this.jobsScroll = undefined;
     this.jobsHeading = undefined;
     this.phase = 'idle';
+    this.pendingAutoDownload = false;
     this.loadedUrl = '';
     this.lastClipboard = '';
   }

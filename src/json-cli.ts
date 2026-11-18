@@ -1,7 +1,7 @@
 import { getOutputDirectory } from './output-directory.ts';
 import { DownloadCancelledError } from './download-recovery.ts';
-import { getVideoInfo, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
-import { normalizeYouTubeUrl } from './utils.ts';
+import { getVideoInfo, hasVideoFormats, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
+import { normalizeVideoUrl } from './utils.ts';
 import type { BackendEvent } from './protocol.ts';
 
 const emit = (event: BackendEvent) => console.log(JSON.stringify(event));
@@ -45,8 +45,8 @@ export async function runJsonCommand(args: string[]): Promise<void> {
   try {
     const [command, input, mode, formatId, output] = args;
     if (command !== 'formats' && command !== 'download') throw new Error('Expected formats or download.');
-    const url = input ? normalizeYouTubeUrl(input) : null;
-    if (!url) throw new Error('Enter a valid YouTube video URL.');
+    const url = input ? normalizeVideoUrl(input) : null;
+    if (!url) throw new Error('Enter a valid HTTP or HTTPS video URL.');
     if (command === 'formats' && args.length !== 2) throw new Error('Usage: --json formats URL');
     if (command === 'download' && (args.length < 4 || args.length > 5 || !['video', 'audio', 'mp3'].includes(mode!)
       || !formatId || !/^(?:best|\w[\w.-]*(?:\+\w[\w.-]*)*)$/.test(formatId))) {
@@ -60,10 +60,10 @@ export async function runJsonCommand(args: string[]): Promise<void> {
       const audio = parseAudioFormats(info);
       emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration, thumbnail: info.thumbnail,
         choices: [
-          ...(videos.length ? [{ id: 'best', mode: 'video' as const, label: 'Best quality', sizeLabel: 'Auto' }] : []),
+          ...(hasVideoFormats(info) ? [{ id: 'best', mode: 'video' as const, label: 'Best quality', sizeLabel: 'Auto' }] : []),
           ...videos.map(f => ({ id: f.formatId, mode: 'video' as const, label: f.resolution, height: f.height, fps: f.fps,
             sizeLabel: f.filesizeLabel, variant: f.variant })),
-          ...(audio.length ? [{ id: 'best', mode: 'mp3' as const, label: 'Audio only', sizeLabel: 'MP3' }] : []),
+          ...((info.formats ?? []).some(f => f.acodec && f.acodec !== 'none') ? [{ id: 'best', mode: 'mp3' as const, label: 'Audio only', sizeLabel: 'MP3' }] : []),
           ...audio.map(f => ({ id: f.formatId, mode: 'audio' as const, label: `Audio · ${f.codec}`, sizeLabel: f.filesizeLabel })),
         ] });
       return;

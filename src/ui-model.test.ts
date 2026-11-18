@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { normalizeYouTubeUrl } from './utils.ts';
-import { groupChoices, choiceKey, choiceLabel, higherQualityHint, qualityBadge } from '../extension/src/choices.ts';
+import { normalizeYouTubeUrl, normalizeVideoUrl } from './utils.ts';
+import { automaticChoice, groupChoices, choiceKey, choiceLabel, higherQualityHint, qualityBadge } from '../extension/src/choices.ts';
 import type { DownloadChoice } from './protocol.ts';
 
 for (const url of [
@@ -78,4 +78,31 @@ test('audio-only sources stay audio-only; automatic video is a fallback without 
   expect(groupChoices([audio]).primary).toEqual([audio]);
   const video: DownloadChoice = { id: 'best', mode: 'video', label: 'Best available' };
   expect(groupChoices([video, audio]).primary).toEqual([video, audio]);
+});
+
+for (const url of [
+  'https://de.pornhub.com/view_video.php?viewkey=6af5118b07e59',
+  'https://vimeo.com/123456',
+  'https://cdn.example.com/video.mp4?token=ABC%2F123&expires=123#video',
+]) {
+  test(`accepts other video sources without changing query parameters: ${url}`, () => {
+    expect(normalizeVideoUrl(url)).toBe(url);
+  });
+}
+test('general video validation preserves YouTube normalization and accepts bare domains', () => {
+  expect(normalizeVideoUrl(' https://youtu.be/abc_DEF-12?si=tracking ')).toBe('https://www.youtube.com/watch?v=abc_DEF-12');
+  expect(normalizeVideoUrl('<vimeo.com/123>')).toBe('https://vimeo.com/123');
+});
+for (const url of ['file:///etc/passwd', 'javascript:alert(1)', '--exec', 'https://user:pass@example.com/video',
+  'https://example.com:99999/video', 'https://example.com/has space', 'ftp://example.com/video', 'https://example.com\\evil']) {
+  test(`rejects invalid or non-HTTP video input: ${url}`, () => expect(normalizeVideoUrl(url)).toBeNull());
+}
+test('automatic download uses a compatible preset and falls back to best video', () => {
+  expect(automaticChoice(choices, 'video:720:quality')?.height).toBe(720);
+  expect(automaticChoice(choices, 'video:1080:smaller')?.id).toBe('small');
+  expect(automaticChoice(choices, 'video:1440:quality')?.id).toBe('best');
+  expect(automaticChoice(choices, '')?.mode).toBe('video');
+  expect(automaticChoice(choices, 'mp3:best')?.mode).toBe('mp3');
+  expect(automaticChoice(choices, 'audio:140')?.mode).toBe('video');
+  expect(automaticChoice([], '')).toBeUndefined();
 });

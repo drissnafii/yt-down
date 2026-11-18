@@ -52,3 +52,12 @@ export function qualityBadge(choice: DownloadChoice): string {
   if (choice.height >= 1080) return 'HD';
   return '';
 }
+
+/** Reuse a compatible preference; format IDs are specific to each source. */
+export function automaticChoice(choices: DownloadChoice[], previous: string): DownloadChoice | undefined {
+  return choices.find(choice => choiceKey(choice) === previous && (choice.height || choice.id === 'best'))
+    ?? choices.find(choice => choice.mode === 'video' && choice.id === 'best')
+    ?? choices.filter(choice => choice.mode === 'video').sort((a, b) => (b.height ?? 0) - (a.height ?? 0))[0]
+    ?? choices.find(choice => choice.mode === 'mp3')
+    ?? choices.find(choice => choice.mode === 'audio');
+}

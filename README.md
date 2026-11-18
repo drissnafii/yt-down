@@ -1,6 +1,6 @@
 # yt-down
 
-> ⬢ Interactive YouTube Downloader CLI — powered by yt-dlp
+> ⬢ Interactive Video Downloader CLI — powered by yt-dlp
 
 A premium interactive CLI tool wrapping **yt-dlp** with beautiful prompts, real-time progress, and smart format selection.
 
@@ -37,6 +37,14 @@ make start
 make dev
 ```
 
+## Supported websites
+
+Links from any HTTP(S) website are passed to yt-dlp, including YouTube, Vimeo,
+Pornhub (including regional domains), and direct video links. Actual support
+is determined by [yt-dlp's extractors](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md).
+Login requirements, regional restrictions, DRM, and site changes can prevent downloads.
+Keep yt-dlp updated; no tool can guarantee downloading every video.
+
 ## Usage
 
 ```bash
@@ -44,7 +52,7 @@ bun run bin/yt-down.ts
 ```
 
 1. Select mode: **Video** or **Podcast (Audio Only)**
-2. Paste a YouTube URL
+2. Paste a video URL supported by yt-dlp
 3. Pick your quality (video mode) or auto-select best audio (podcast mode)
 4. Confirm and watch the download with live progress
 
@@ -188,9 +196,9 @@ The panel extension lives in `extension/` and supports GNOME Shell **45+**
 (currently declared versions: **45–51**; runtime tested on **51**). It adapts to
 the older GNOME 45–47 widget APIs. Future GNOME releases require compatibility
 checks and an explicit metadata update before they can be enabled. Paste
-a YouTube link to fetch formats automatically, or open the popup with a link in
+a video link to fetch formats automatically, or open the popup with a link in
 your clipboard. Clipboard detection runs only when the popup opens and can be
-turned off in Settings. A download always requires choosing a format.
+turned off in Settings. By default, choose a format to start a download. Enable **Download automatically after pasting** in Settings to start as soon as a valid link is pasted, without Enter or a quality click. Automatic downloads use your last quality or MP3 preset when available, otherwise best available video quality. Clipboard detection when opening the popup only fetches formats, even with this option enabled.
 
 The main list keeps **1080p**, **720p**, and **Audio · MP3** visible when available.
 When neither 1080p nor 720p exists (for example, a video offers 1634p and 1090p),
