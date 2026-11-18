@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createProgressParser } from './json-cli.ts';
@@ -18,6 +18,8 @@ if (args.includes('-j')) {
     formats:process.env.NO_HEIGHT ? [{format_id:'http',vcodec:'h264',acodec:'aac',ext:'mp4'}] : [{format_id:'18',height:360,vcodec:'avc1',acodec:'mp4a',ext:'mp4',filesize:1000},
       {format_id:'140',vcodec:'none',acodec:'mp4a',ext:'m4a',abr:128}]}));
 } else {
+  if (process.env.EXPECT_DIRECTORY && args[args.indexOf('--paths') + 1] !== process.env.EXPECT_DIRECTORY)
+    throw new Error('Wrong download directory');
   if (process.env.HANG_DOWNLOAD) { await Bun.write(process.env.HANG_DOWNLOAD, 'ready'); await Bun.sleep(60000); }
   if (process.env.EXPECT_MP3 && (!args.includes('--extract-audio') || args[args.indexOf('--audio-format') + 1] !== 'mp3'
     || args[args.indexOf('-f') + 1] !== 'bestaudio/best')) throw new Error('MP3 conversion arguments missing');
@@ -112,4 +114,17 @@ test('non-YouTube URLs reach extraction and download without a YouTube gate', as
   const download = await result(spawn(['download', url, 'video', 'best', join(dir, 'output')]));
   expect(download.code).toBe(0);
   expect(download.events.at(-1)?.type).toBe('complete');
+});
+
+test('other-site video and audio downloads use and report the other_sites directory', async () => {
+  const root = join(dir, 'downloads');
+  const destination = join(root, 'other_sites');
+  for (const mode of ['video', 'audio', 'mp3']) {
+    const { code, events } = await result(spawn([
+      'download', 'https://vimeo.com/123', mode, 'best', root,
+    ], { EXPECT_DIRECTORY: destination }));
+    expect(code).toBe(0);
+    expect(events.at(-1)).toEqual({ type: 'complete', directory: destination });
+    expect((await stat(destination)).isDirectory()).toBe(true);
+  }
 });

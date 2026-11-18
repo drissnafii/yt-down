@@ -20,8 +20,6 @@ import { getOutputDirectory } from './output-directory.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const OUTPUT_DIR = getOutputDirectory();
-
 type Mode = 'video' | 'podcast';
 
 // ─── Logo ────────────────────────────────────────────────────────────────────
@@ -125,6 +123,7 @@ export async function main(): Promise<void> {
 // ─── Video Download Flow ────────────────────────────────────────────────────
 
 async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> {
+  const outputDirectory = getOutputDirectory({ url });
   const formats = parseVideoFormats(info);
 
   if (!hasVideoFormats(info)) {
@@ -168,7 +167,7 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
     : formats.find((f) => f.formatId === selectedFormat)?.displayLabel ?? String(selectedFormat);
 
   const shouldDownload = await p.confirm({
-    message: `Download ${chalk.cyan(formatLabel)} to ${chalk.dim(OUTPUT_DIR)}?`,
+    message: `Download ${chalk.cyan(formatLabel)} to ${chalk.dim(outputDirectory)}?`,
   });
 
   if (p.isCancel(shouldDownload) || !shouldDownload) {
@@ -184,14 +183,14 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
   const formatId = selectedFormat === 'best' ? 'bestvideo+bestaudio' : String(selectedFormat);
 
   try {
-    await downloadVideo(url, formatId, OUTPUT_DIR, info);
+    await downloadVideo(url, formatId, outputDirectory, info);
     console.log(chalk.dim('─'.repeat(60)));
     console.log('');
 
     // Step 9 — Done
     p.outro(
       chalk.green('✅ Download complete!') +
-      chalk.dim(`  Saved to ${OUTPUT_DIR}/`)
+      chalk.dim(`  Saved to ${outputDirectory}/`)
     );
   } catch (error) {
     console.log('');
@@ -209,6 +208,7 @@ async function handleVideoDownload(url: string, info: VideoInfo): Promise<void> 
 // ─── Podcast / Audio Only Flow ──────────────────────────────────────────────
 
 async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void> {
+  const outputDirectory = getOutputDirectory({ url });
   const audioFormats = parseAudioFormats(info);
 
   if (audioFormats.length === 0) {
@@ -228,7 +228,7 @@ async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void
 
   // Confirm download
   const shouldDownload = await p.confirm({
-    message: `Download best audio to ${chalk.dim(OUTPUT_DIR)}?`,
+    message: `Download best audio to ${chalk.dim(outputDirectory)}?`,
   });
 
   if (p.isCancel(shouldDownload) || !shouldDownload) {
@@ -243,13 +243,13 @@ async function handlePodcastDownload(url: string, info: VideoInfo): Promise<void
 
   try {
     // Download the exact audio format shown above, preferring m4a for compatibility.
-    await downloadAudio(url, best.formatId, OUTPUT_DIR, info);
+    await downloadAudio(url, best.formatId, outputDirectory, info);
     console.log(chalk.dim('─'.repeat(60)));
     console.log('');
 
     p.outro(
       chalk.green('✅ Audio download complete!') +
-      chalk.dim(`  Saved to ${OUTPUT_DIR}/`)
+      chalk.dim(`  Saved to ${outputDirectory}/`)
     );
   } catch (error) {
     console.log('');

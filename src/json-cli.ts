@@ -68,7 +68,7 @@ export async function runJsonCommand(args: string[]): Promise<void> {
         ] });
       return;
     }
-    const directory = output ?? getOutputDirectory();
+    const directory = getOutputDirectory({ directory: output, url });
     const download = mode === 'mp3' ? downloadMp3 : mode === 'audio' ? downloadAudio : downloadVideo;
     const selected = formatId === 'best' ? (mode === 'video' ? 'bestvideo+bestaudio/best' : 'bestaudio/best') : formatId!;
     emit({ type: 'status', message: 'Starting download…' });

@@ -57,6 +57,10 @@ bun run bin/yt-down.ts
 4. Confirm and watch the download with live progress
 
 Downloads are saved to `~/Videos/yt-down/`.
+YouTube downloads stay in this folder; downloads from other websites go into
+`~/Videos/yt-down/other_sites/`. With a custom download folder, `other_sites/`
+is created inside that folder. This applies to the CLI and GNOME extension,
+including automatic downloads and audio downloads.
 
 ### Download speed
 
