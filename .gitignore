@@ -5,3 +5,5 @@ bun.lock
 /benchmark-results*.json
 
 /dist/
+
+/bin/yt-down.exe

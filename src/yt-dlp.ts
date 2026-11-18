@@ -11,6 +11,7 @@ import { withMetadataFile } from './metadata-cache.ts';
 import { getTransferArgs } from './transfer-options.ts';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { getOutputDirectory } from './output-directory.ts';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ export interface FormattedAudioFormat {
 // the system package (typically outdated). Falls back to env override or PATH.
 const LOCAL_YT_DLP = join(homedir(), '.local/bin/yt-dlp');
 const YT_DLP_BIN = Bun.env.YT_DLP_BIN ?? (Bun.file(LOCAL_YT_DLP).size > 0 ? LOCAL_YT_DLP : 'yt-dlp');
-const OUTPUT_DIR = join(homedir(), 'Videos/yt-down');
+const OUTPUT_DIR = getOutputDirectory();
 
 function getJsRuntimeArgs(): string[] {
   if (Bun.env.YT_DLP_JS_RUNTIME) {
@@ -107,12 +108,7 @@ function getBaseArgs(): string[] {
 }
 
 function getSupportedRuntime(command: string, runtime = command): string | null {
-  const proc = Bun.spawnSync(['which', command], {
-    stdout: 'ignore',
-    stderr: 'ignore',
-  });
-
-  return proc.exitCode === 0 ? runtime : null;
+  return Bun.which(command) ? runtime : null;
 }
 
 function getSupportedBunRuntime(): string | null {

@@ -24,6 +24,8 @@ A premium interactive CLI tool wrapping **yt-dlp** with beautiful prompts, real-
 
 ## Quick Start
 
+Using Windows? See the [Windows CLI setup guide](docs/windows-cli.md).
+
 ```bash
 # Install dependencies
 make install

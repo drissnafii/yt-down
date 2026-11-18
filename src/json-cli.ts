@@ -1,5 +1,4 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { getOutputDirectory } from './output-directory.ts';
 import { DownloadCancelledError } from './download-recovery.ts';
 import { getVideoInfo, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
 import { normalizeYouTubeUrl } from './utils.ts';
@@ -69,7 +68,7 @@ export async function runJsonCommand(args: string[]): Promise<void> {
         ] });
       return;
     }
-    const directory = output ?? join(homedir(), 'Videos', 'yt-down');
+    const directory = output ?? getOutputDirectory();
     const download = mode === 'mp3' ? downloadMp3 : mode === 'audio' ? downloadAudio : downloadVideo;
     const selected = formatId === 'best' ? (mode === 'video' ? 'bestvideo+bestaudio/best' : 'bestaudio/best') : formatId!;
     emit({ type: 'status', message: 'Starting download…' });

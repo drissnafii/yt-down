@@ -15,10 +15,11 @@ import {
 } from './yt-dlp.ts';
 import { isValidYouTubeUrl, formatDuration } from './utils.ts';
 import { DownloadCancelledError } from './download-recovery.ts';
+import { getOutputDirectory } from './output-directory.ts';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const OUTPUT_DIR = '/home/dendo/Videos/yt-down';
+const OUTPUT_DIR = getOutputDirectory();
 
 type Mode = 'video' | 'podcast';
 
