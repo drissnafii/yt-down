@@ -39,7 +39,7 @@ if (process.argv[2] !== '--session') {
           global.context.unsafe_mode = true;
           globalThis.__mediaRaises = 0;
           globalThis.__mediaLaunches = 0;
-          globalThis.__mediaUrl = 'file:///tmp/example.mp4';
+          globalThis.__mediaUrl = ${JSON.stringify('file://' + join(dir, 'example.mp4'))};
           this.root = Gio.DBusExportedObject.wrapJSObject('<node><interface name="org.mpris.MediaPlayer2"><method name="Raise"/></interface></node>', {
             Raise() { globalThis.__mediaRaises++; }
           });
@@ -68,7 +68,9 @@ if (process.argv[2] !== '--session') {
       } else {
         emit({type:'progress',percent:50,speed:1048576,eta:10});
         await Bun.sleep(args.some(arg=>arg.includes('batch')) ? 5000 : 700);
-        emit({type:'file',path:'/tmp/example.mp4'});
+        const output = ${JSON.stringify(join(dir, 'example.mp4'))};
+        await Bun.write(output, new Uint8Array(1572864));
+        emit({type:'file',path:output});
         emit({type:'complete',directory:'/tmp'});
       }
     `);
@@ -76,7 +78,7 @@ if (process.argv[2] !== '--session') {
       XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'), XDG_CACHE_HOME: join(dir, 'cache'),
       LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DOWN_SMOKE_BUN: process.execPath };
     await command(['dbus-run-session', '--', process.execPath, import.meta.path, '--session'], env);
-    console.log('GNOME UI: search, presets, progress ring, completion, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
+    console.log('GNOME UI: search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
   } finally {
     await rm(dir, { recursive: true, force: true });
     const after = await command(['gsettings', 'get', 'org.gnome.shell', 'enabled-extensions']);
@@ -131,7 +133,18 @@ if (process.argv[2] !== '--session') {
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.percent'), value => value.includes("'50'"), 'download progress');
     await check("e.button.menu.isOpen && e.panelRing.visible && e.jobsScroll.visible && e.entry.clutter_text.editable", 'progress stays visible after activation');
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.state'), value => value.includes('"complete"'), 'saved state');
-    await check("e.jobs[0].actions.visible && e.jobs[0].openFile.visible && !e.panelRing.visible", 'completion actions');
+    await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.size.text'), value => value.includes('1.5 MB'), 'actual completed file size');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.entry.grab_key_focus(); e.jobs[0].card.set_hover(false); return 'OK'; })()");
+    await check("!e.jobs[0].actions.visible && e.jobs[0].size.visible && !e.jobs[0].header.visible && !e.jobs[0].progress.visible && !e.jobs[0].detail.visible", 'saved row is compact by default');
+    await evaluate("globalThis.__savedRowHeight=globalThis.__getYtDown().jobs[0].card.height; globalThis.__getYtDown().jobs[0].card.set_hover(true); 'OK'");
+    await delay(100);
+    await check("e.jobs[0].actions.visible && !e.jobs[0].size.visible && e.jobs[0].card.height === globalThis.__savedRowHeight", 'hover actions preserve one-line height');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.jobs[0].card.set_hover(false); e.jobs[0].card.grab_key_focus(); return 'OK'; })()");
+    await check("e.jobs[0].actions.visible", 'keyboard focus reveals actions');
+    await evaluate("globalThis.__getYtDown().jobs[0].openFile.grab_key_focus(); 'OK'");
+    await check("e.jobs[0].actions.visible", 'actions remain available while a child has focus');
+    await evaluate("globalThis.__getYtDown().entry.grab_key_focus(); 'OK'");
+    await check("!e.jobs[0].actions.visible && e.jobs[0].size.visible && !e.panelRing.visible", 'actions hide when focus leaves');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.mediaOpener.launch=async()=>{globalThis.__mediaLaunches++;}; e.openMedia(e.jobs[0].filePath); return 'OK'; })()");
     await waitFor(() => evaluate('globalThis.__mediaRaises'), value => value.includes("'1'"), 'focus currently playing file');
     await evaluate("globalThis.__getYtDown().openMedia(globalThis.__getYtDown().jobs[0].filePath); 'OK'");

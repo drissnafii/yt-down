@@ -207,7 +207,9 @@ The link field stays available while downloads run. Select a quality for each
 new link to add it to the queue. **Two videos download simultaneously by default**;
 Settings lets you choose **1–3 simultaneous downloads**. This is the application's
 limit, not a hardware maximum. Additional videos wait until a slot is free.
-Each job has its own progress, cancellation, and saved-file actions. Reducing the
+Each job has its own progress and cancellation. Finished jobs collapse to a single
+line with their title and actual saved-file size. Hover or keyboard focus reveals
+Open file, Open folder, and Dismiss controls in that same line. Reducing the
 limit lets already-running jobs finish; it does not interrupt them. Downloads of
 the same video into the same folder run sequentially to protect partial files.
 The queue and its recent history last for the current extension session;
