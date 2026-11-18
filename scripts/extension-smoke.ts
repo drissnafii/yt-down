@@ -32,13 +32,27 @@ if (process.argv[2] !== '--session') {
     await writeFile(join(extensions, helperUuid, 'extension.js'), `
       import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
       import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+      import Gio from 'gi://Gio';
+      import GLib from 'gi://GLib';
       export default class Test extends Extension {
         enable() {
           global.context.unsafe_mode = true;
+          globalThis.__mediaRaises = 0;
+          globalThis.__mediaLaunches = 0;
+          globalThis.__mediaUrl = 'file:///tmp/example.mp4';
+          this.root = Gio.DBusExportedObject.wrapJSObject('<node><interface name="org.mpris.MediaPlayer2"><method name="Raise"/></interface></node>', {
+            Raise() { globalThis.__mediaRaises++; }
+          });
+          this.player = Gio.DBusExportedObject.wrapJSObject('<node><interface name="org.mpris.MediaPlayer2.Player"><property name="Metadata" type="a{sv}" access="read"/></interface></node>', {
+            get Metadata() { return {'xesam:url':new GLib.Variant('s',globalThis.__mediaUrl)}; }
+          });
+          this.root.export(Gio.DBus.session,'/org/mpris/MediaPlayer2');
+          this.player.export(Gio.DBus.session,'/org/mpris/MediaPlayer2');
+          this.name = Gio.bus_own_name_on_connection(Gio.DBus.session,'org.mpris.MediaPlayer2.ytdown_smoke',Gio.BusNameOwnerFlags.NONE,null,null);
           globalThis.__getYtDown = () => Main.extensionManager.lookup('${uuid}').stateObj;
           globalThis.__shellReady = () => !Main.layoutManager._startingUp;
         }
-        disable() { delete globalThis.__getYtDown; global.context.unsafe_mode = false; }
+        disable() { this.root.unexport(); this.player.unexport(); Gio.bus_unown_name(this.name); delete globalThis.__getYtDown; global.context.unsafe_mode = false; }
       }
     `);
     // Exercise the frontend without network traffic, browser cookies or real downloads.
@@ -53,7 +67,7 @@ if (process.argv[2] !== '--session') {
           {id:'best',mode:'mp3',label:'Audio only',sizeLabel:'MP3'}]});
       } else {
         emit({type:'progress',percent:50,speed:1048576,eta:10});
-        await Bun.sleep(700);
+        await Bun.sleep(args.some(arg=>arg.includes('batch')) ? 5000 : 700);
         emit({type:'file',path:'/tmp/example.mp4'});
         emit({type:'complete',directory:'/tmp'});
       }
@@ -62,7 +76,7 @@ if (process.argv[2] !== '--session') {
       XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'), XDG_CACHE_HOME: join(dir, 'cache'),
       LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DOWN_SMOKE_BUN: process.execPath };
     await command(['dbus-run-session', '--', process.execPath, import.meta.path, '--session'], env);
-    console.log('GNOME UI: search, presets, progress ring, completion, reduced motion and cleanup passed.');
+    console.log('GNOME UI: search, presets, progress ring, completion, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
   } finally {
     await rm(dir, { recursive: true, force: true });
     const after = await command(['gsettings', 'get', 'org.gnome.shell', 'enabled-extensions']);
@@ -96,7 +110,7 @@ if (process.argv[2] !== '--session') {
   };
   const check = async (expression: string, label: string) => {
     const result = await evaluate(`(() => { const e = globalThis.__getYtDown(); return (${expression}) ? 'PASS' : 'FAIL'; })()`);
-    if (!result.includes('"PASS"')) throw new Error(`${label}: ${result}; ` + await evaluate("JSON.stringify({phase:globalThis.__getYtDown().phase,open:globalThis.__getYtDown().button.menu.isOpen,ring:globalThis.__getYtDown().panelRing.visible,progress:globalThis.__getYtDown().progressBox.visible})"));
+    if (!result.includes('"PASS"')) throw new Error(`${label}: ${result}; ` + await evaluate("JSON.stringify({phase:globalThis.__getYtDown().phase,open:globalThis.__getYtDown().button.menu.isOpen,ring:globalThis.__getYtDown().panelRing.visible,jobs:globalThis.__getYtDown().jobs.length})"));
   };
   try {
     await waitFor(() => call('org.gnome.Shell.Extensions.EnableExtension', helperUuid), value => value.includes('true'), 'test helper');
@@ -114,10 +128,30 @@ if (process.argv[2] !== '--session') {
     await delay(150);
     await check("(() => { const [fx] = e.urlField.get_transformed_position(); const [cx] = e.clearButton.get_transformed_position(); const [ix] = e.urlField.get_parent().get_transformed_position(); return cx >= fx && cx+e.clearButton.width <= fx+e.urlField.width+1 && fx+e.urlField.width <= ix+e.urlField.get_parent().width+1; })()", 'clear button stays inside long URL field');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.formats._getMenuItems()[0].emit('activate',null); return 'OK'; })()");
-    await waitFor(() => evaluate('globalThis.__getYtDown().percent'), value => value.includes("'50'"), 'download progress');
-    await check("e.button.menu.isOpen && e.panelRing.visible && e.progressBox.visible", 'progress stays visible after activation');
-    await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"complete"'), 'saved state');
-    await check("e.completion.visible && e.openFile.visible && !e.panelRing.visible", 'completion actions');
+    await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.percent'), value => value.includes("'50'"), 'download progress');
+    await check("e.button.menu.isOpen && e.panelRing.visible && e.jobsScroll.visible && e.entry.clutter_text.editable", 'progress stays visible after activation');
+    await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.state'), value => value.includes('"complete"'), 'saved state');
+    await check("e.jobs[0].actions.visible && e.jobs[0].openFile.visible && !e.panelRing.visible", 'completion actions');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.mediaOpener.launch=async()=>{globalThis.__mediaLaunches++;}; e.openMedia(e.jobs[0].filePath); return 'OK'; })()");
+    await waitFor(() => evaluate('globalThis.__mediaRaises'), value => value.includes("'1'"), 'focus currently playing file');
+    await evaluate("globalThis.__getYtDown().openMedia(globalThis.__getYtDown().jobs[0].filePath); 'OK'");
+    await waitFor(() => evaluate('globalThis.__mediaRaises'), value => value.includes("'2'"), 'second click raises the same player');
+    await check("globalThis.__mediaLaunches === 0", 'no duplicate player launch');
+    await evaluate("globalThis.__mediaUrl='file:///tmp/another-video.mp4'; globalThis.__getYtDown().openMedia(globalThis.__getYtDown().jobs[0].filePath); 'OK'");
+    await waitFor(() => evaluate('globalThis.__mediaLaunches'), value => value.includes("'1'"), 'launch file when it is not playing');
+    await evaluate("globalThis.__getYtDown().openMedia(globalThis.__getYtDown().jobs[0].filePath); 'OK'");
+    await delay(200);
+    await check("globalThis.__mediaLaunches === 1", 'repeated clicks during player startup do not launch twice');
+    for (const number of [1, 2, 3]) {
+      await evaluate(`(() => { const e=globalThis.__getYtDown(); e.setEntry('https://youtu.be/batch${number}'); e.fetchFormats(); return 'OK'; })()`);
+      await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'next video formats while downloading');
+      await evaluate("(() => { const e=globalThis.__getYtDown(); e.formats._getMenuItems()[0].emit('activate',null); return 'OK'; })()");
+    }
+    await check("e.queue.active === 2 && e.queue.queued === 1 && e.entry.clutter_text.editable", 'two simultaneous downloads and an editable input');
+    await check("e.jobs.filter(j=>j.state==='active').length === 2 && e.jobs.filter(j=>j.state==='queued').length === 1", 'independent job state');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.cancelJob(e.jobs.find(j=>j.state==='active')); return 'OK'; })()");
+    await waitFor(() => evaluate('globalThis.__getYtDown().queue.queued'), value => value.includes("'0'"), 'cancelled slot starts queued download');
+    await check("e.queue.active === 2 && e.jobs.some(j=>j.state==='cancelled')", 'per-job cancellation leaves the other download running');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.motionAllowed=()=>false; e.setPhase('searching'); e.syncMotion(); return 'OK'; })()");
     await check("e.skeleton.opacity === 255 && e.skeleton.get_transition('opacity') === null", 'reduced motion');
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);

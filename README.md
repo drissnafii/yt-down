@@ -191,6 +191,8 @@ your clipboard. Clipboard detection runs only when the popup opens and can be
 turned off in Settings. A download always requires choosing a format.
 
 The main list keeps **1080p**, **720p**, and **Audio · MP3** visible when available.
+When neither 1080p nor 720p exists (for example, a video offers 1634p and 1090p),
+the highest available video quality appears alongside audio on the main list.
 Each row shows quality on the left and file size on the right. Video rows have no
 icons; audio rows use a music icon. **Show more** contains other resolutions,
 smaller-file variants, automatic best quality, and original audio. A badge such
@@ -201,9 +203,23 @@ The video title appears above the list without a thumbnail or preview card. Sear
 immediate loading placeholders and a spinner; results reveal with a brief
 transition. Motion follows GNOME's animation and reduced-motion settings.
 Downloads show progress, speed and remaining time, plus a panel progress ring.
+The link field stays available while downloads run. Select a quality for each
+new link to add it to the queue. **Two videos download simultaneously by default**;
+Settings lets you choose **1–3 simultaneous downloads**. This is the application's
+limit, not a hardware maximum. Additional videos wait until a slot is free.
+Each job has its own progress, cancellation, and saved-file actions. Reducing the
+limit lets already-running jobs finish; it does not interrupt them. Downloads of
+the same video into the same folder run sequentially to protect partial files.
+The queue and its recent history last for the current extension session;
+disabling the extension or logging out cancels active jobs and clears the queue.
+Partial files remain available to resume by adding the same video and quality.
+
 Downloads continue when the popup closes; **Cancel** keeps partial files for
 resuming. The saved state offers **Open file** and **Open folder**, along with a
-desktop notification. MP3 downloads are converted by ffmpeg; original audio
+desktop notification. Open file focuses a player already showing that same file
+(using MPRIS media metadata, with a window-matching fallback) and suppresses
+repeated launches while the player starts. Buttons use a neutral fill and modest
+corner rounding. MP3 downloads are converted by ffmpeg; original audio
 formats remain available under Show more.
 
 The frontend is TypeScript compiled to readable GJS ES modules. It launches a
@@ -307,7 +323,8 @@ bun run bin/yt-down.ts --json download 'https://youtu.be/VIDEO_ID' audio '140' "
 
 Each stdout line is a JSON event: `status`, `formats`, `progress`, `file`,
 `complete`, `cancelled`, or `error`. Format choices include their ID and mode.
-Progress percentages apply to the current stream, so the percentage can restart
+Extension downloads include the video ID in their filename to distinguish videos
+with identical titles. Progress percentages apply to the current stream, so the percentage can restart
 when the audio stream begins. Unknown totals produce `percent: null`; completion
 is reported only after postprocessing succeeds. SIGTERM or SIGINT cancels the
 backend and its active downloader; errors exit with status 1 and cancellation

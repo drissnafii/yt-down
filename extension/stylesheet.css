@@ -3,15 +3,13 @@
 .yt-down-content, .yt-down-footer { width: 376px; padding: 8px 16px; spacing: 12px; }
 .yt-down-header { spacing: 8px; }
 .yt-down-heading { font-size: 1.25em; font-weight: 700; }
-.yt-down-icon-button { min-width: 40px; min-height: 40px; border-radius: 12px; padding: 2px; }
+.yt-down-icon-button { min-width: 40px; min-height: 40px; border-radius: 6px; padding: 2px; }
 .yt-down-icon-button:hover, .yt-down-icon-button:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-input { spacing: 8px; }
 .yt-down-url-field { border-radius: 10px; padding-right: 4px; background-color: rgba(128,128,128,0.16); }
 .yt-down-clear { min-width: 28px; min-height: 28px; border-radius: 8px; padding: 2px; }
 .yt-down-clear:hover, .yt-down-clear:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-entry { min-width: 0; min-height: 28px; border: none; border-radius: 10px; padding: 8px 10px; background-color: transparent; }
-.yt-down-primary { background-color: -st-accent-color; color: -st-accent-fg-color; }
-.yt-down-primary:hover, .yt-down-primary:focus { background-color: -st-accent-color; }
 .yt-down-video-info { padding: 4px 0; }
 .yt-down-title { font-weight: 700; }
 .yt-down-secondary { font-size: 0.9em; }
@@ -36,10 +34,10 @@
 .yt-down-cancel { padding: 8px; border-radius: 8px; font-size: 0.9em; }
 .yt-down-cancel:hover, .yt-down-cancel:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-completion { spacing: 8px; }
-.yt-down-action { min-height: 40px; padding: 0 12px; border-radius: 12px; }
+.yt-down-action { min-height: 36px; padding: 0 12px; border-radius: 6px; background-color: rgba(128,128,128,0.14); border: 1px solid rgba(128,128,128,0.22); }
 .yt-down-action-content { spacing: 8px; }
 .yt-down-action:hover, .yt-down-action:focus { background-color: rgba(128,128,128,0.24); }
-.yt-down-legacy .yt-down-primary,
-.yt-down-legacy .yt-down-primary:hover,
-.yt-down-legacy .yt-down-primary:focus { background-color: #3584e4; color: #ffffff; }
 .yt-down-legacy .yt-down-progress-fill { background-color: #3584e4; }
+.yt-down-jobs { spacing: 8px; }
+.yt-down-jobs-scroll { max-height: 280px; }
+.yt-down-job-header { spacing: 8px; }

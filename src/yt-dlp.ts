@@ -335,7 +335,7 @@ async function download(url: string, formatId: string, outputDir: string, info?:
   if (transferArgs.includes('http:aria2c')) transferArgs.push('--paths', `temp:${join(outputPath, '.aria2')}`);
   const args = [
     ...getBaseArgs(), ...transferArgs,
-    '-f', formatId, '--paths', outputPath, '-o', '%(title)s.%(ext)s',
+    '-f', formatId, '--paths', outputPath, '-o', options.onOutput ? '%(title)s [%(id)s].%(ext)s' : '%(title)s.%(ext)s',
     ...extra, '--progress',
     ...(options.onOutput ? ['--newline', '--progress-delta', '0.3', '--progress-template',
       'download:yt-down-progress:%(progress)j', '--print', 'after_move:yt-down-file:%(filepath)j'] : []),

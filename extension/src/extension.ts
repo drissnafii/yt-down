@@ -11,11 +11,20 @@ import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Backend, findBun } from './client.js';
+import { MediaOpener } from './media.js';
+import { TaskQueue } from './queue.js';
 import { choiceKey, choiceLabel, qualityBadge, groupChoices, higherQualityHint } from './choices.js';
 import { normalizeYouTubeUrl, formatDuration } from '../../src/utils.js';
 import type { BackendEvent, DownloadChoice } from '../../src/protocol.js';
 
-type Phase = 'idle' | 'searching' | 'ready' | 'downloading' | 'complete' | 'error';
+type Phase = 'idle' | 'searching' | 'ready' | 'error';
+interface DownloadJob {
+  url: string; title: string; choice: DownloadChoice; directory: string;
+  state: 'queued' | 'active' | 'cancelling' | 'complete' | 'cancelled' | 'error';
+  percent: number | null; filePath: string; backend?: Backend;
+  card: St.BoxLayout; progress: St.Widget; fill: St.Widget; label: St.Label;
+  detail: St.Label; cancel: St.Button; actions: St.BoxLayout; openFile: St.Button;
+}
 
 export default class YtDownExtension extends Extension {
   private button?: PanelMenu.Button;
@@ -38,20 +47,17 @@ export default class YtDownExtension extends Extension {
   private skeleton?: St.BoxLayout;
   private formats?: PopupMenu.PopupMenuSection;
   private more?: PopupMenu.PopupSubMenuMenuItem;
-  private progress?: St.Widget;
-  private fill?: St.Widget;
-  private progressLabel?: St.Label;
-  private progressDetails?: St.Label;
-  private progressBox?: St.BoxLayout;
-  private completion?: St.BoxLayout;
-  private openFile?: St.Button;
+  private jobsBox?: St.BoxLayout;
+  private jobsScroll?: St.ScrollView;
+  private jobsHeading?: St.Label;
+  private jobs: DownloadJob[] = [];
+  private queue?: TaskQueue<DownloadJob>;
+  private limitSignal = 0;
+  private mediaOpener?: MediaOpener;
   private phase: Phase = 'idle';
   private percent: number | null = null;
   private loadedUrl = '';
   private lastClipboard = '';
-  private selectedLabel = '';
-  private filePath = '';
-  private outputDirectory = '';
   private debounce = 0;
   private suppressEntry = false;
   private shellMajor = 0;
@@ -73,9 +79,9 @@ export default class YtDownExtension extends Extension {
     return label;
   }
 
-  private action(name: string, text: string, callback: () => void, primary = false): St.Button {
+  private action(name: string, text: string, callback: () => void): St.Button {
     const button = new St.Button({ can_focus: true, accessible_name: text,
-      style_class: `yt-down-action${primary ? ' yt-down-primary' : ''}` });
+      style_class: 'yt-down-action' });
     const content = new St.BoxLayout({ style_class: 'yt-down-action-content' });
     content.add_child(this.icon(name));
     content.add_child(this.label(text));
@@ -88,6 +94,13 @@ export default class YtDownExtension extends Extension {
     this.shellMajor = Number.parseInt(Config.PACKAGE_VERSION, 10);
     this.phase = 'idle';
     this.settings = this.getSettings();
+    this.jobs = [];
+    this.queue = new TaskQueue(this.settings.get_int('parallel-downloads'), (job, done) => this.startDownload(job, done));
+    this.limitSignal = this.settings.connect('changed::parallel-downloads', () => {
+      this.queue?.setLimit(this.settings!.get_int('parallel-downloads'));
+      this.syncJobs();
+    });
+    this.mediaOpener = new MediaOpener(uri => this.launchUri(uri));
     this.button = new PanelMenu.Button(0.0, 'yt-down');
     const menu = this.button.menu as PopupMenu.PopupMenu;
     menu.actor.add_style_class_name('yt-down-popup');
@@ -133,7 +146,7 @@ export default class YtDownExtension extends Extension {
     this.urlField.add_child(this.clearButton);
     input.add_child(this.urlField);
     this.searchButton = new St.Button({ can_focus: true, accessible_name: 'Find video',
-      style_class: 'yt-down-icon-button yt-down-primary' });
+      style_class: 'yt-down-icon-button' });
     this.searchButton.set_child(this.icon('go-next-symbolic', 20));
     this.searchButton.connect('clicked', () => this.fetchFormats());
     input.add_child(this.searchButton);
@@ -166,22 +179,6 @@ export default class YtDownExtension extends Extension {
 
     const footer = this.column('yt-down-footer');
     menu.box.add_child(footer);
-    this.progressBox = this.column('yt-down-download');
-    this.progressBox.visible = false;
-    const progressHeader = new St.BoxLayout();
-    this.progressLabel = this.label('', 'yt-down-title');
-    progressHeader.add_child(this.progressLabel);
-    this.progressBox.add_child(progressHeader);
-    this.progress = new St.Widget({ style_class: 'yt-down-progress', x_expand: true,
-      accessible_name: 'Download progress' });
-    this.fill = new St.Widget({ style_class: 'yt-down-progress-fill', width: 0 });
-    this.progress.add_child(this.fill);
-    this.progress.connect('notify::width', () => this.updateProgress(false));
-    this.progressBox.add_child(this.progress);
-    this.progressDetails = this.label('', 'yt-down-secondary');
-    this.progressBox.add_child(this.progressDetails);
-    footer.add_child(this.progressBox);
-
     const statusRow = new St.BoxLayout({ style_class: 'yt-down-status-row' });
     this.activity = new Animation.Spinner(18);
     this.activity.visible = false;
@@ -199,11 +196,16 @@ export default class YtDownExtension extends Extension {
     statusRow.add_child(this.status);
     statusRow.add_child(this.cancelButton);
     footer.add_child(statusRow);
-    this.completion = new St.BoxLayout({ style_class: 'yt-down-completion', visible: false });
-    this.openFile = this.action('media-playback-start-symbolic', 'Open file', () => this.openPath(this.filePath), true);
-    this.completion.add_child(this.openFile);
-    this.completion.add_child(this.action('folder-open-symbolic', 'Open folder', () => this.openPath(this.outputDirectory)));
-    footer.add_child(this.completion);
+    this.jobsHeading = this.label('', 'yt-down-secondary');
+    this.jobsHeading.visible = false;
+    footer.add_child(this.jobsHeading);
+    this.jobsBox = this.column('yt-down-jobs');
+    this.jobsScroll = new St.ScrollView({ style_class: 'yt-down-jobs-scroll', overlay_scrollbars: true,
+      hscrollbar_policy: St.PolicyType.NEVER, vscrollbar_policy: St.PolicyType.AUTOMATIC, visible: false });
+    if (this.shellMajor < 46) {
+      (this.jobsScroll as unknown as { add_actor(child: Clutter.Actor): void }).add_actor(this.jobsBox);
+    } else this.jobsScroll.set_child(this.jobsBox);
+    footer.add_child(this.jobsScroll);
 
     menu.connect('open-state-changed', (_menu, open: boolean) => {
       this.syncMotion();
@@ -257,7 +259,6 @@ export default class YtDownExtension extends Extension {
     if (this.busy()) return;
     this.clearDebounce();
     this.loadedUrl = '';
-    this.filePath = '';
     this.setEntry('');
     this.onInput();
     this.entry?.grab_key_focus();
@@ -270,7 +271,6 @@ export default class YtDownExtension extends Extension {
     if (!url) { this.setPhase('error'); this.setStatus('Use a YouTube video, Shorts, or share link.', true); return; }
     this.loadedUrl = url;
     this.setEntry(url);
-    this.filePath = '';
     this.formats?.removeAll();
     this.more?.menu.removeAll();
     if (this.more) this.more.visible = false;
@@ -290,7 +290,7 @@ export default class YtDownExtension extends Extension {
     for (const choice of primary) this.addChoice(this.formats!, choice, previous);
     for (const choice of more) this.addChoice(this.more!.menu, choice, previous);
     this.more!.visible = more.length > 0;
-    this.moreHint!.text = higherQualityHint(more);
+    this.moreHint!.text = higherQualityHint(more, Math.max(1080, ...primary.map(choice => choice.height ?? 0)));
     this.moreHint!.visible = Boolean(this.moreHint!.text);
     this.setPhase('ready');
     this.setStatus(event.choices.length ? 'Ready when you are.' : 'No downloadable formats found.', !event.choices.length);
@@ -328,28 +328,135 @@ export default class YtDownExtension extends Extension {
   }
 
   private download(choice: DownloadChoice): void {
-    if (this.busy()) return;
-    const configured = this.settings!.get_string('output-directory').trim();
-    const directory = configured || GLib.build_filenamev([
+    if (this.busy() || !this.loadedUrl) return;
+    const requestedDirectory = this.settings!.get_string('output-directory').trim() || GLib.build_filenamev([
       GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS) ?? GLib.build_filenamev([GLib.get_home_dir(), 'Videos']), 'yt-down',
     ]);
-    if (!GLib.path_is_absolute(directory)) { this.setStatus('Set an absolute download folder in Settings.', true); return; }
+    if (!GLib.path_is_absolute(requestedDirectory)) { this.setStatus('Set an absolute download folder in Settings.', true); return; }
+    const directory = GLib.canonicalize_filename(requestedDirectory, null);
+    if (this.jobs.some(job => job.url === this.loadedUrl && job.directory === directory && job.choice.mode === choice.mode
+      && job.choice.id === choice.id && ['queued', 'active', 'cancelling'].includes(job.state))) {
+      this.setStatus('That download is already running or queued.'); return;
+    }
     this.settings!.set_string('last-choice', choiceKey(choice));
-    this.selectedLabel = choiceLabel(choice);
-    this.filePath = '';
-    this.outputDirectory = directory;
-    // Keep the activating row alive until its signal finishes; hide the group.
-    // Destroying it mid-emission can let Shell's after-handler close the popup.
-    if (this.formats) this.formats.actor.visible = false;
-    this.more?.menu.close();
-    if (this.more) this.more.visible = false;
-    this.percent = null;
-    this.progressLabel!.text = `Downloading ${this.selectedLabel}`;
-    this.progressDetails!.text = 'Connecting…';
-    this.setPhase('downloading');
-    if (this.isOpen()) this.cancelButton?.grab_key_focus();
-    this.setStatus('You can close this popup. We’ll keep downloading.');
-    this.run(['download', this.loadedUrl, choice.mode, choice.id, directory]);
+    const card = this.column('yt-down-download');
+    card.add_child(this.label(this.title!.text, 'yt-down-title'));
+    const header = new St.BoxLayout({ style_class: 'yt-down-job-header' });
+    const label = this.label('Queued', 'yt-down-secondary');
+    const cancel = new St.Button({ can_focus: true, style_class: 'yt-down-clear', accessible_name: `Cancel ${this.title!.text}` });
+    cancel.set_child(this.icon('process-stop-symbolic', 14));
+    header.add_child(label); header.add_child(cancel); card.add_child(header);
+    const progress = new St.Widget({ style_class: 'yt-down-progress', x_expand: true });
+    const fill = new St.Widget({ style_class: 'yt-down-progress-fill', width: 0 });
+    progress.add_child(fill); card.add_child(progress);
+    const detail = this.label('Waiting for a download slot…', 'yt-down-secondary', true);
+    card.add_child(detail);
+    const actions = new St.BoxLayout({ style_class: 'yt-down-completion', visible: false });
+    const job: DownloadJob = { url: this.loadedUrl, title: this.title!.text, choice, directory, state: 'queued', percent: null,
+      filePath: '', card, progress, fill, label, detail, cancel, actions,
+      openFile: this.action('media-playback-start-symbolic', 'Open file', () => { void this.openMedia(job.filePath); }) };
+    actions.add_child(job.openFile);
+    actions.add_child(this.action('folder-open-symbolic', 'Open folder', () => this.openPath(job.directory)));
+    card.add_child(actions);
+    cancel.connect('clicked', () => this.cancelJob(job));
+    progress.connect('notify::width', () => this.updateJobProgress(job));
+    this.jobs.push(job); this.jobsBox!.add_child(card);
+    this.queue!.add(job, `${directory}\0${job.url}`);
+    // Keep the activating row alive until its signal finishes, but release the input.
+    this.formats!.actor.visible = false;
+    this.more?.menu.close(); if (this.more) this.more.visible = false;
+    this.videoInfo!.visible = false;
+    this.loadedUrl = ''; this.setEntry(''); this.setPhase('idle');
+    this.setStatus('Paste another link to add a download.');
+    this.entry?.grab_key_focus();
+    this.syncJobs();
+  }
+
+  private startDownload(job: DownloadJob, done: () => void): void {
+    job.state = 'active'; job.label.text = `${choiceLabel(job.choice)} · Connecting…`;
+    job.detail.text = 'Starting download…';
+    try {
+      const backend = new Backend(); job.backend = backend;
+      backend.start([findBun(this.settings!.get_string('bun-path')), `${this.path}/backend.js`, '--json',
+        'download', job.url, job.choice.mode, job.choice.id, job.directory], event => this.onJobEvent(job, event), () => {
+        job.backend = undefined;
+        job.cancel.reactive = true;
+        if (['complete', 'error', 'cancelled'].includes(job.state)) this.finishJobControls(job);
+        done(); this.syncJobs();
+      });
+    } catch (error) {
+      job.backend?.destroy(); job.backend = undefined;
+      this.onJobEvent(job, { type: 'error', message: String(error) });
+      this.finishJobControls(job); done();
+    }
+    this.syncJobs();
+  }
+
+  private onJobEvent(job: DownloadJob, event: BackendEvent): void {
+    if (!this.button || !['active', 'cancelling'].includes(job.state)) return;
+    switch (event.type) {
+      case 'progress':
+        if (job.state === 'cancelling') break;
+        job.percent = event.percent;
+        job.label.text = `${choiceLabel(job.choice)} · ${event.percent === null ? 'Downloading' : `${Math.floor(event.percent)}%`}`;
+        job.detail.text = [event.speed === null ? '' : `${(event.speed / 1024 / 1024).toFixed(1)} MiB/s`,
+          event.eta === null ? '' : `${formatDuration(Math.ceil(event.eta))} left`].filter(Boolean).join(' · ') || 'Downloading…';
+        this.updateJobProgress(job); break;
+      case 'status': if (job.state !== 'cancelling') job.detail.text = event.message; break;
+      case 'file': job.filePath = event.path; break;
+      case 'complete':
+        job.state = 'complete'; job.percent = 100; job.label.text = `${choiceLabel(job.choice)} · Saved`;
+        job.detail.text = 'Download complete.'; job.directory = event.directory;
+        job.actions.visible = true; job.openFile.visible = Boolean(job.filePath); job.cancel.reactive = false;
+        this.updateJobProgress(job);
+        Main.notify('yt-down', `Saved: ${job.title}`); break;
+      case 'cancelled':
+        job.state = 'cancelled'; job.label.text = 'Cancelled'; job.detail.text = 'Partial files kept for resuming.';
+        job.cancel.reactive = false; break;
+      case 'error':
+        job.state = 'error'; job.label.text = 'Download failed'; job.detail.text = event.message;
+        job.cancel.reactive = false; Main.notifyError('yt-down', `${job.title}: ${event.message}`); break;
+      case 'formats': break;
+    }
+    this.syncJobs();
+  }
+
+  private finishJobControls(job: DownloadJob): void {
+    job.cancel.set_child(this.icon('window-close-symbolic', 14));
+    job.cancel.accessible_name = `Dismiss ${job.title}`;
+    job.cancel.reactive = true;
+    // Retain only a short session history so completed rows cannot grow forever.
+    const history = this.jobs.filter(item => !item.backend && ['complete', 'error', 'cancelled'].includes(item.state));
+    for (const older of history.slice(0, -5)) this.dismissJob(older);
+  }
+
+  private cancelJob(job: DownloadJob): void {
+    if (job.state === 'queued') {
+      this.queue!.remove(job); this.dismissJob(job);
+    } else if (job.state === 'active') {
+      job.state = 'cancelling'; job.detail.text = 'Cancelling…'; job.cancel.reactive = false; job.backend?.cancel();
+    } else if (job.state !== 'cancelling' && !job.backend) this.dismissJob(job);
+    this.syncJobs();
+  }
+
+  private dismissJob(job: DownloadJob): void {
+    this.jobs = this.jobs.filter(item => item !== job);
+    job.fill.remove_all_transitions(); job.card.destroy();
+  }
+
+  private updateJobProgress(job: DownloadJob): void {
+    const width = job.progress.width * (job.percent ?? 0) / 100;
+    job.fill.remove_all_transitions();
+    if (this.isOpen() && this.motionAllowed()) job.fill.ease({ width, duration: 180 });
+    else job.fill.width = width;
+    job.progress.accessible_name = job.percent === null ? 'Download size unknown' : `${Math.floor(job.percent)} percent downloaded`;
+  }
+
+  private syncJobs(): void {
+    if (!this.jobsHeading || !this.jobsScroll) return;
+    this.jobsHeading.visible = this.jobsScroll.visible = this.jobs.length > 0;
+    this.jobsHeading.text = `${this.queue?.active ?? 0} downloading · ${this.queue?.queued ?? 0} queued`;
+    this.syncPanel();
   }
 
   private run(args: string[]): void {
@@ -370,66 +477,28 @@ export default class YtDownExtension extends Extension {
 
   private onEvent(event: BackendEvent): void {
     if (!this.button) return;
-    switch (event.type) {
-      case 'formats': this.renderFormats(event); break;
-      case 'progress': {
-        this.percent = event.percent;
-        this.updateProgress();
-        this.syncPanel();
-        const percentage = event.percent === null ? 'Downloading' : `${Math.floor(event.percent)}%`;
-        const speed = event.speed === null ? '' : `${(event.speed / 1024 / 1024).toFixed(1)} MiB/s`;
-        const eta = event.eta === null ? '' : `${formatDuration(Math.ceil(event.eta))} left`;
-        this.progressLabel!.text = `${this.selectedLabel} · ${percentage}`;
-        this.progressDetails!.text = [speed, eta].filter(Boolean).join(' · ') || 'Downloading…';
-        break;
-      }
-      case 'status':
-        if (this.phase === 'downloading') this.progressDetails!.text = event.message;
-        else this.setStatus(event.message);
-        break;
-      case 'file': this.filePath = event.path; break;
-      case 'complete':
-        this.outputDirectory = event.directory;
-        this.percent = 100;
-        this.updateProgress();
-        this.setPhase('complete');
-        this.openFile!.visible = Boolean(this.filePath);
-        this.setStatus('Saved. Enjoy your download.');
-        this.reveal(this.completion!);
-        Main.notify('yt-down', 'Download saved. Open it from the panel.');
-        break;
-      case 'cancelled':
-        this.setPhase('idle');
-        this.setStatus('Cancelled. Partial files kept so you can resume.');
-        break;
-      case 'error':
-        this.setPhase('error');
-        this.setStatus(event.message, true);
-        Main.notifyError('yt-down', event.message);
-        break;
-    }
+    if (event.type === 'formats') this.renderFormats(event);
+    else if (event.type === 'status') this.setStatus(event.message);
+    else if (event.type === 'cancelled') { this.setPhase('idle'); this.setStatus('Search cancelled.'); }
+    else if (event.type === 'error') { this.setPhase('error'); this.setStatus(event.message, true); }
   }
 
   private isOpen(): boolean { return Boolean(this.button && (this.button.menu as PopupMenu.PopupMenu).isOpen); }
 
-  private busy(): boolean { return this.phase === 'searching' || this.phase === 'downloading'; }
+  private busy(): boolean { return this.phase === 'searching'; }
 
   private setPhase(phase: Phase): void {
     this.phase = phase;
     const busy = this.busy();
     if (this.entry) { this.entry.clutter_text.editable = !busy; this.entry.reactive = !busy; }
     if (this.clearButton) { this.clearButton.reactive = !busy; this.clearButton.can_focus = !busy; }
-    if (this.searchButton) this.searchButton.visible = !busy && phase !== 'ready' && phase !== 'complete';
+    if (this.searchButton) this.searchButton.visible = !busy && phase !== 'ready';
     if (this.cancelButton) { this.cancelButton.visible = busy; this.cancelButton.reactive = busy; }
     if (this.skeleton) this.skeleton.visible = phase === 'searching';
-    if (this.progressBox) this.progressBox.visible = phase === 'downloading';
-    if (this.completion) this.completion.visible = phase === 'complete';
     if (this.statusIcon) {
       this.statusIcon.visible = !busy;
-      this.statusIcon.icon_name = phase === 'complete' ? 'emblem-ok-symbolic'
-        : phase === 'error' ? 'dialog-warning-symbolic' : phase === 'ready' ? 'object-select-symbolic' : 'insert-link-symbolic';
-      if (phase === 'complete') this.statusIcon.add_style_class_name('yt-down-success');
-      else this.statusIcon.remove_style_class_name('yt-down-success');
+      this.statusIcon.icon_name = phase === 'error' ? 'dialog-warning-symbolic'
+        : phase === 'ready' ? 'object-select-symbolic' : 'insert-link-symbolic';
     }
     this.syncMotion();
     this.syncPanel();
@@ -477,27 +546,20 @@ export default class YtDownExtension extends Extension {
     actor.ease({ opacity: 255, ...{ translation_y: 0 }, duration: 180, mode: Clutter.AnimationMode.EASE_OUT_QUAD });
   }
 
-  private updateProgress(animate = true): void {
-    if (!this.fill || !this.progress) return;
-    const width = this.progress.width * (this.percent ?? 0) / 100;
-    if (animate && this.motionAllowed() && this.isOpen()) {
-      this.fill.ease({ width, duration: 200, mode: Clutter.AnimationMode.EASE_OUT_QUAD });
-    } else { this.fill.remove_all_transitions(); this.fill.width = width; }
-    this.progress.accessible_name = this.percent === null ? 'Downloading, size unknown' : `${Math.floor(this.percent)} percent downloaded`;
-  }
-
   private syncPanel(): void {
-    const active = this.busy();
-    const ring = this.phase === 'downloading' && this.percent !== null;
+    const downloads = this.jobs.filter(job => ['active', 'cancelling'].includes(job.state));
+    const active = downloads.length > 0 || this.busy();
+    this.percent = downloads.some(job => job.percent !== null)
+      ? downloads.reduce((sum, job) => sum + (job.percent ?? 0), 0) / downloads.length : null;
+    const ring = active && this.percent !== null;
     if (this.panelIcon) this.panelIcon.visible = !active;
     if (this.panelRing) { this.panelRing.visible = ring; this.panelRing.queue_repaint(); }
     if (this.panelActivity) {
       this.panelActivity.visible = active && !ring;
-      if (active && !ring && this.motionAllowed()) this.panelActivity.play();
-      else this.panelActivity.stop();
+      if (active && !ring && this.motionAllowed()) this.panelActivity.play(); else this.panelActivity.stop();
     }
-    if (this.button) this.button.accessible_name = ring ? `yt-down, ${Math.floor(this.percent!)} percent downloaded`
-      : this.phase === 'searching' ? 'yt-down, finding video' : this.phase === 'complete' ? 'yt-down, download saved' : 'yt-down';
+    if (this.button) this.button.accessible_name = downloads.length
+      ? `yt-down, ${downloads.length} downloads active, ${this.queue?.queued ?? 0} queued` : this.busy() ? 'yt-down, finding video' : 'yt-down';
   }
 
   private drawRing(): void {
@@ -516,11 +578,25 @@ export default class YtDownExtension extends Extension {
     cr.$dispose();
   }
 
+  private async openMedia(path: string): Promise<void> {
+    if (!path) return;
+    try { await this.mediaOpener?.open(path); }
+    catch (error) { if (this.button) this.setStatus(`Could not open download: ${String(error)}`, true); }
+  }
+
   private openPath(path: string): void {
     if (!path) return;
-    Gio.AppInfo.launch_default_for_uri_async(Gio.File.new_for_path(path).get_uri(), null, null, (_source, result) => {
-      try { Gio.AppInfo.launch_default_for_uri_finish(result); }
-      catch (error) { if (this.button) this.setStatus(`Could not open download: ${String(error)}`, true); }
+    void this.launchUri(Gio.File.new_for_path(path).get_uri()).catch(error => {
+      if (this.button) this.setStatus(`Could not open download: ${String(error)}`, true);
+    });
+  }
+
+  private launchUri(uri: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      Gio.AppInfo.launch_default_for_uri_async(uri, global.create_app_launch_context(0, -1), null, (_source, result) => {
+        try { Gio.AppInfo.launch_default_for_uri_finish(result); resolve(); }
+        catch (error) { reject(error); }
+      });
     });
   }
 
@@ -530,13 +606,17 @@ export default class YtDownExtension extends Extension {
 
   disable(): void {
     this.clearDebounce();
+    this.mediaOpener?.destroy();
+    this.mediaOpener = undefined;
     this.backend?.destroy();
     this.backend = undefined;
+    this.queue?.stop();
+    for (const job of this.jobs) { job.backend?.destroy(); job.fill.remove_all_transitions(); }
+    this.jobs = []; this.queue = undefined;
+    if (this.limitSignal) { this.settings?.disconnect(this.limitSignal); this.limitSignal = 0; }
     this.skeleton?.remove_all_transitions();
     this.videoInfo?.remove_all_transitions();
     this.formats?.actor.remove_all_transitions();
-    this.completion?.remove_all_transitions();
-    this.fill?.remove_all_transitions();
     this.activity?.stop();
     this.panelActivity?.stop();
     this.button?.destroy();
@@ -559,13 +639,9 @@ export default class YtDownExtension extends Extension {
     this.skeleton = undefined;
     this.formats = undefined;
     this.more = undefined;
-    this.progress = undefined;
-    this.fill = undefined;
-    this.progressLabel = undefined;
-    this.progressDetails = undefined;
-    this.progressBox = undefined;
-    this.completion = undefined;
-    this.openFile = undefined;
+    this.jobsBox = undefined;
+    this.jobsScroll = undefined;
+    this.jobsHeading = undefined;
     this.phase = 'idle';
     this.loadedUrl = '';
     this.lastClipboard = '';

@@ -33,7 +33,7 @@ test.skipIf(!ffmpeg || !ffprobe || !ytdlp)('MP3 download converts real audio and
     const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
     expect(stderr).toBe('');
     expect(code).toBe(0);
-    const output = join(dir, 'Conversion test.mp3');
+    const output = join(dir, 'Conversion test [source].mp3');
     expect(stdout).toContain(JSON.stringify({ type: 'file', path: output }));
     const probe = Bun.spawn([ffprobe!, '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', output], { stdout: 'pipe' });
     expect((await new Response(probe.stdout).text()).trim()).toBe('mp3');

@@ -7,6 +7,14 @@ export function groupChoices(choices: DownloadChoice[]) {
     const choice = choices.find(c => c.mode === 'video' && c.height === height && c.variant !== 'smaller');
     if (choice) primary.push(choice);
   }
+  // Nonstandard aspect ratios may have no exact 1080p or 720p option.
+  if (primary.length === 0) {
+    const highest = choices.filter(c => c.mode === 'video' && (c.height ?? 0) > 0)
+      .sort((a, b) => (b.height ?? 0) - (a.height ?? 0)
+        || Number(a.variant === 'smaller') - Number(b.variant === 'smaller'))[0]
+      ?? choices.find(c => c.mode === 'video' && c.id === 'best');
+    if (highest) primary.push(highest);
+  }
   const audio = choices.find(c => c.mode === 'mp3') ?? choices.find(c => c.mode === 'audio');
   if (audio) primary.push(audio);
   const more = choices.filter(c => !primary.includes(c));
@@ -15,8 +23,9 @@ export function groupChoices(choices: DownloadChoice[]) {
   return { primary, more };
 }
 
-export function higherQualityHint(choices: DownloadChoice[]): string {
+export function higherQualityHint(choices: DownloadChoice[], visibleHeight = 1080): string {
   const height = Math.max(0, ...choices.filter(c => c.mode === 'video').map(c => c.height ?? 0));
+  if (height <= visibleHeight) return '';
   if (height >= 4320) return '8K available';
   if (height >= 2160) return '4K available';
   if (height > 1080) return `${height}p available`;

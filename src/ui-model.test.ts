@@ -43,7 +43,7 @@ test('other qualities remain behind Show more; missing presets are not invented'
   expect(more[0]?.height).toBe(2160);
   expect(more.some(choice => choice.height === 480)).toBe(true);
   const available = groupChoices(choices.filter(c => c.height !== 1080 && c.height !== 720));
-  expect(available.primary.map(choiceKey)).toEqual(['mp3:best']);
+  expect(available.primary.map(choiceKey)).toEqual(['video:2160:quality', 'mp3:best']);
 });
 
 test('simple resolution labels and high-quality availability remain accurate', () => {
@@ -53,4 +53,29 @@ test('simple resolution labels and high-quality availability remain accurate', (
   expect(higherQualityHint([{ id: 'x', mode: 'video', label: '', height: 4320 }])).toBe('8K available');
   expect(higherQualityHint(choices.filter(c => (c.height ?? 0) <= 1080))).toBe('');
   expect(qualityBadge({ id: 'x', mode: 'video', label: '', height: 2160 })).toBe('4K');
+});
+
+
+test('nonstandard resolutions show the highest video and audio on the first view', () => {
+  const available: DownloadChoice[] = [
+    { id: 'best', mode: 'video', label: 'Best available' },
+    ...[818, 1634, 1090, 544, 364, 272, 182, 128].map(height => ({
+      id: String(height), label: `${height}p`, mode: 'video' as const, height, variant: 'quality' as const,
+    })),
+    { id: 'small', mode: 'video', label: '1634p', height: 1634, variant: 'smaller' },
+    { id: 'best', mode: 'mp3', label: 'Audio' },
+  ];
+  const { primary, more } = groupChoices(available);
+  expect(primary.map(choiceKey)).toEqual(['video:1634:quality', 'mp3:best']);
+  expect(more.some(choice => choice.id === '1634')).toBe(false);
+  expect(more.some(choice => choice.id === '1090')).toBe(true);
+  expect(new Set([...primary, ...more]).size).toBe(available.length);
+  expect(higherQualityHint(more, 1634)).toBe('');
+});
+
+test('audio-only sources stay audio-only; automatic video is a fallback without heights', () => {
+  const audio: DownloadChoice = { id: 'best', mode: 'mp3', label: 'Audio' };
+  expect(groupChoices([audio]).primary).toEqual([audio]);
+  const video: DownloadChoice = { id: 'best', mode: 'video', label: 'Best available' };
+  expect(groupChoices([video, audio]).primary).toEqual([video, audio]);
 });
