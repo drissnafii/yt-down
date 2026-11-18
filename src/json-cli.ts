@@ -1,8 +1,8 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { DownloadCancelledError } from './download-recovery.ts';
-import { getVideoInfo, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio } from './yt-dlp.ts';
-import { isValidYouTubeUrl } from './utils.ts';
+import { getVideoInfo, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
+import { normalizeYouTubeUrl } from './utils.ts';
 import type { BackendEvent } from './protocol.ts';
 
 const emit = (event: BackendEvent) => console.log(JSON.stringify(event));
@@ -46,30 +46,32 @@ export async function runJsonCommand(args: string[]): Promise<void> {
   try {
     const [command, input, mode, formatId, output] = args;
     if (command !== 'formats' && command !== 'download') throw new Error('Expected formats or download.');
-    if (!input || !isValidYouTubeUrl(input)) throw new Error('Enter a valid YouTube video URL.');
+    const url = input ? normalizeYouTubeUrl(input) : null;
+    if (!url) throw new Error('Enter a valid YouTube video URL.');
     if (command === 'formats' && args.length !== 2) throw new Error('Usage: --json formats URL');
-    if (command === 'download' && (args.length < 4 || args.length > 5 || !['video', 'audio'].includes(mode!)
+    if (command === 'download' && (args.length < 4 || args.length > 5 || !['video', 'audio', 'mp3'].includes(mode!)
       || !formatId || !/^(?:best|\w[\w.-]*(?:\+\w[\w.-]*)*)$/.test(formatId))) {
-      throw new Error('Usage: --json download URL video|audio FORMAT_ID [OUTPUT_DIR]');
+      throw new Error('Usage: --json download URL video|audio|mp3 FORMAT_ID [OUTPUT_DIR]');
     }
-    const url = /^https?:\/\//.test(input.trim()) ? input.trim() : `https://${input.trim()}`;
     emit({ type: 'status', message: 'Fetching video details…' });
     const info = await getVideoInfo(url, controller.signal);
     if (controller.signal.aborted) throw new DownloadCancelledError();
     if (command === 'formats') {
       const videos = parseVideoFormats(info);
       const audio = parseAudioFormats(info);
-      emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration,
+      emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration, thumbnail: info.thumbnail,
         choices: [
-          ...(videos.length ? [{ id: 'best', mode: 'video' as const, label: 'Best available video + audio' }] : []),
-          ...videos.map(f => ({ id: f.formatId, mode: 'video' as const, label: f.displayLabel })),
-          ...audio.map(f => ({ id: f.formatId, mode: 'audio' as const, label: `Audio only · ${f.displayLabel}` })),
+          ...(videos.length ? [{ id: 'best', mode: 'video' as const, label: 'Best quality', sizeLabel: 'Auto' }] : []),
+          ...videos.map(f => ({ id: f.formatId, mode: 'video' as const, label: f.resolution, height: f.height, fps: f.fps,
+            sizeLabel: f.filesizeLabel, variant: f.variant })),
+          ...(audio.length ? [{ id: 'best', mode: 'mp3' as const, label: 'Audio only', sizeLabel: 'MP3' }] : []),
+          ...audio.map(f => ({ id: f.formatId, mode: 'audio' as const, label: `Audio · ${f.codec}`, sizeLabel: f.filesizeLabel })),
         ] });
       return;
     }
     const directory = output ?? join(homedir(), 'Videos', 'yt-down');
-    const download = mode === 'audio' ? downloadAudio : downloadVideo;
-    const selected = formatId === 'best' ? 'bestvideo+bestaudio/best' : formatId!;
+    const download = mode === 'mp3' ? downloadMp3 : mode === 'audio' ? downloadAudio : downloadVideo;
+    const selected = formatId === 'best' ? (mode === 'video' ? 'bestvideo+bestaudio/best' : 'bestaudio/best') : formatId!;
     emit({ type: 'status', message: 'Starting download…' });
     const parsers = { stdout: createProgressParser(emit), stderr: createProgressParser(emit) };
     await download(url, selected, directory, info, {

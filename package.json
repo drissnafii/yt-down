@@ -14,17 +14,18 @@
     "extension:build": "bun run scripts/extension.ts build",
     "extension:install": "bun run scripts/extension.ts install",
     "extension:pack": "bun run scripts/extension.ts pack",
-    "extension:typecheck": "tsc -p extension/tsconfig.json"
+    "extension:typecheck": "tsc -p extension/tsconfig.json",
+    "extension:smoke": "bun run scripts/extension-smoke.ts"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "chalk": "^5.6.2"
   },
   "devDependencies": {
-    "@girs/clutter-17": "^5.6.0",
+    "@girs/clutter-51": "^5.6.0",
     "@girs/gjs": "^5.6.0",
     "@girs/gnome-shell": "^51.0.1",
-    "@girs/st-17": "^5.6.0",
+    "@girs/st-51": "^5.6.0",
     "@types/bun": "latest",
     "@types/node": "^22.0.0"
   },

@@ -10,5 +10,18 @@
       <summary>Download directory</summary>
       <description>Absolute path. Empty means the user's Videos/yt-down directory.</description>
     </key>
+    <key name="last-choice" type="s">
+      <default>''</default>
+      <summary>Last selected quality or audio preset</summary>
+    </key>
+    <key name="clipboard-autofetch" type="b">
+      <default>true</default>
+      <summary>Find a YouTube link in the clipboard when opening the popup</summary>
+    </key>
+    <key name="parallel-downloads" type="i">
+      <default>2</default>
+      <range min="1" max="3"/>
+      <summary>Maximum simultaneous downloads</summary>
+    </key>
   </schema>
 </schemalist>

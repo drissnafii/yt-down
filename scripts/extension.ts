@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -13,13 +13,13 @@ async function run(argv: string[]) {
 await run([process.execPath, 'run', 'extension:typecheck']);
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });
-// tsc emits readable ES modules and preserves GNOME's gi:// and resource:// imports.
-await run([process.execPath, 'x', '--no-install', 'tsc', '-p', 'extension/tsconfig.json',
-  '--noEmit', 'false', '--outDir', 'dist/extension-js']);
-for (const file of await readdir(join(root, 'dist/extension-js/extension/src'))) {
-  await cp(join(root, 'dist/extension-js/extension/src', file), join(destination, file));
-}
-await rm(join(root, 'dist/extension-js'), { recursive: true, force: true });
+// Bundle only our frontend helpers; GJS resolves GNOME's native imports at runtime.
+const frontend = await Bun.build({
+  entrypoints: [join(root, 'extension/src/extension.ts'), join(root, 'extension/src/prefs.ts')],
+  target: 'browser', outdir: destination, naming: '[name].js', minify: false,
+  external: ['gi://*', 'resource://*'],
+});
+if (!frontend.success) throw new AggregateError(frontend.logs, 'Frontend build failed');
 for (const file of ['metadata.json', 'stylesheet.css', 'schemas']) {
   await cp(join(root, 'extension', file), join(destination, file), { recursive: true });
 }

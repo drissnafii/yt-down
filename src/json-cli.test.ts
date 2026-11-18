@@ -19,6 +19,8 @@ if (args.includes('-j')) {
       {format_id:'140',vcodec:'none',acodec:'mp4a',ext:'m4a',abr:128}]}));
 } else {
   if (process.env.HANG_DOWNLOAD) { await Bun.write(process.env.HANG_DOWNLOAD, 'ready'); await Bun.sleep(60000); }
+  if (process.env.EXPECT_MP3 && (!args.includes('--extract-audio') || args[args.indexOf('--audio-format') + 1] !== 'mp3'
+    || args[args.indexOf('-f') + 1] !== 'bestaudio/best')) throw new Error('MP3 conversion arguments missing');
   if (!args.includes('--load-info-json')) throw new Error('Missing metadata snapshot');
   console.error('an extractor warning');
   console.log('yt-down-progress:' + JSON.stringify({downloaded_bytes:50,total_bytes:100,speed:1024,eta:2}));
@@ -43,7 +45,7 @@ test('formats protocol returns existing backend video and audio choices without 
   expect(code).toBe(0);
   expect(stderr).toBe('');
   expect(events.at(-1)).toMatchObject({type:'formats', title:'Test video', choices: [
-    {id:'best',mode:'video'}, {id:'18',mode:'video'}, {id:'140',mode:'audio'},
+    {id:'best',mode:'video'}, {id:'18',mode:'video'}, {id:'best',mode:'mp3'}, {id:'140',mode:'audio'},
   ]});
 });
 
@@ -91,4 +93,11 @@ test('progress parser handles split records, unknown totals, escaped filenames a
     {type:'progress',percent:null,speed:null,eta:null},
     {type:'file',path:'/tmp/A "title".mp4'},
   ]);
+});
+
+
+test('MP3 preset actually requests ffmpeg extraction and conversion', async () => {
+  const { code, events } = await result(spawn(['download', 'https://youtu.be/test', 'mp3', 'best', join(dir, 'output')], { EXPECT_MP3: '1' }));
+  expect(code).toBe(0);
+  expect(events.at(-1)?.type).toBe('complete');
 });

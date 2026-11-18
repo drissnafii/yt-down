@@ -27,14 +27,21 @@ export function formatBytes(bytes: number | null | undefined): string {
 /**
  * Validate YouTube URL (youtube.com/watch, youtu.be/, youtube.com/shorts/)
  */
-export function isValidYouTubeUrl(url: string): boolean {
-  const patterns = [
-    /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtu\.be\/[\w-]+/,
-    /^(https?:\/\/)?(www\.)?youtube\.com\/shorts\/[\w-]+/,
-  ];
+/** Accept common share/mobile/player URLs, discard tracking and playlist arguments. */
+export function normalizeYouTubeUrl(input: string): string | null {
+  const value = input.trim().replace(/^[<"']|[>"']$/g, '').replace(/\s+/g, '');
+  const match = value.match(/^(?:https?:\/\/)?(?:(?:www|m|music)\.)?(youtube\.com|youtu\.be)\/([^#]*)/i);
+  if (!match) return null;
+  const path = match[2]!;
+  const id = match[1]!.toLowerCase() === 'youtu.be'
+    ? path.match(/^([\w-]+)(?:[?&#/]|$)/)?.[1]
+    : path.match(/^(?:shorts|live|embed|v)\/([\w-]+)(?:[?&#/]|$)/)?.[1]
+      ?? (/^watch\?/.test(path) ? path.match(/[?&]v=([\w-]+)(?:[&#]|$)/)?.[1] : undefined);
+  return id ? `https://www.youtube.com/watch?v=${id}` : null;
+}
 
-  return patterns.some((pattern) => pattern.test(url.trim()));
+export function isValidYouTubeUrl(url: string): boolean {
+  return normalizeYouTubeUrl(url) !== null;
 }
 
 /**

@@ -186,10 +186,43 @@ The panel extension lives in `extension/` and supports GNOME Shell **45+**
 (currently declared versions: **45–51**; runtime tested on **51**). It adapts to
 the older GNOME 45–47 widget APIs. Future GNOME releases require compatibility
 checks and an explicit metadata update before they can be enabled. Paste
-a YouTube URL, press **Next**, then select a video quality or an **Audio only**
-option to start. The popup shows transfer progress, speed and remaining time.
+a YouTube link to fetch formats automatically, or open the popup with a link in
+your clipboard. Clipboard detection runs only when the popup opens and can be
+turned off in Settings. A download always requires choosing a format.
+
+The main list keeps **1080p**, **720p**, and **Audio · MP3** visible when available.
+When neither 1080p nor 720p exists (for example, a video offers 1634p and 1090p),
+the highest available video quality appears alongside audio on the main list.
+Each row shows quality on the left and file size on the right. Video rows have no
+icons; audio rows use a music icon. **Show more** contains other resolutions,
+smaller-file variants, automatic best quality, and original audio. A badge such
+as **4K available** or **1440p available** signals higher resolutions in that list.
+Your last choice is remembered without adding extra rows to the main list.
+
+The video title appears above the list without a thumbnail or preview card. Search shows
+immediate loading placeholders and a spinner; results reveal with a brief
+transition. Motion follows GNOME's animation and reduced-motion settings.
+Downloads show progress, speed and remaining time, plus a panel progress ring.
+The link field stays available while downloads run. Select a quality for each
+new link to add it to the queue. **Two videos download simultaneously by default**;
+Settings lets you choose **1–3 simultaneous downloads**. This is the application's
+limit, not a hardware maximum. Additional videos wait until a slot is free.
+Each job has its own progress and cancellation. Finished jobs collapse to a single
+line with their title and actual saved-file size. Hover or keyboard focus reveals
+Open file, Open folder, and Dismiss controls in that same line. Reducing the
+limit lets already-running jobs finish; it does not interrupt them. Downloads of
+the same video into the same folder run sequentially to protect partial files.
+The queue and its recent history last for the current extension session;
+disabling the extension or logging out cancels active jobs and clears the queue.
+Partial files remain available to resume by adding the same video and quality.
+
 Downloads continue when the popup closes; **Cancel** keeps partial files for
-resuming. Completion and errors also appear as desktop notifications.
+resuming. The saved state offers **Open file** and **Open folder**, along with a
+desktop notification. Open file focuses a player already showing that same file
+(using MPRIS media metadata, with a window-matching fallback) and suppresses
+repeated launches while the player starts. Buttons use a neutral fill and modest
+corner rounding. MP3 downloads are converted by ffmpeg; original audio
+formats remain available under Show more.
 
 The frontend is TypeScript compiled to readable GJS ES modules. It launches a
 bundled copy of **this repository's backend** through `Gio.Subprocess`, using
@@ -253,13 +286,22 @@ bun run typecheck
 bun run extension:typecheck
 bun test
 bun run extension:build
+bun run extension:smoke
 ```
 
 The build is written to `dist/yt-down@drissnafii/`. After changing the extension,
 rebuild and reinstall, then restart your GNOME session to load updated ES modules.
-For an isolated graphical test on GNOME 49 and newer, use
-`dbus-run-session -- gnome-shell --devkit`; on GNOME 45–48, use
-`dbus-run-session -- gnome-shell --nested --wayland`.
+The automated `extension:smoke` check runs a separate headless GNOME Shell with
+memory-backed settings and a fixture backend. It exercises loading, presets,
+progress, completion, reduced motion, and cleanup, and verifies that your desktop's
+enabled-extension list stayed unchanged. It requires a working local GNOME Shell
+and a built extension. It does not download media or use browser cookies.
+
+For a graphical test on GNOME 49 and newer, use
+`GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --devkit`; on GNOME 45–48,
+use `GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --nested --wayland`.
+Keep settings memory-backed when testing a nested shell so it cannot overwrite
+your desktop preferences.
 
 Inspect shell errors with:
 
@@ -283,8 +325,18 @@ bun run bin/yt-down.ts --json download 'https://youtu.be/VIDEO_ID' audio '140' "
 
 Each stdout line is a JSON event: `status`, `formats`, `progress`, `file`,
 `complete`, `cancelled`, or `error`. Format choices include their ID and mode.
-Progress percentages apply to the current stream, so the percentage can restart
+Extension downloads include the video ID in their filename to distinguish videos
+with identical titles. Progress percentages apply to the current stream, so the percentage can restart
 when the audio stream begins. Unknown totals produce `percent: null`; completion
 is reported only after postprocessing succeeds. SIGTERM or SIGINT cancels the
 backend and its active downloader; errors exit with status 1 and cancellation
-with status 130. Types are defined in `src/protocol.ts`.
+with status 130. Types are defined in `src/protocol.ts`. The `mp3` download mode converts audio
+to MP3; `audio` preserves the selected original stream. Shared, mobile, Shorts,
+live, and embedded video links are normalized and tracking/playlist arguments
+are removed.
+
+The popup design applies [Laws of UX](https://lawsofux.com/): progressive
+disclosure limits the initial choices (Hick's Law), generous full-width targets
+reduce pointing effort (Fitts's Law), immediate loading feedback acknowledges
+input (Doherty Threshold), and completion actions make the saved result useful
+(Peak-End Rule). These improve feedback without claiming faster network access.

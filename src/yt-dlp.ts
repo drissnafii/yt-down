@@ -320,6 +320,13 @@ export async function downloadAudio(
   return download(url, formatId, outputDir, info, [], options);
 }
 
+/** Convert the selected audio stream to MP3 with ffmpeg. */
+export async function downloadMp3(url: string, formatId: string, outputDir: string = OUTPUT_DIR,
+  info?: VideoInfo, options?: RecoveryOptions): Promise<string> {
+  return download(url, formatId, outputDir, info,
+    ['--extract-audio', '--audio-format', 'mp3', '--audio-quality', '0'], options);
+}
+
 async function download(url: string, formatId: string, outputDir: string, info?: VideoInfo, extra: string[] = [], options: RecoveryOptions = {}): Promise<string> {
   const outputPath = resolve(outputDir);
   const transferArgs = getTransferArgs();
@@ -328,7 +335,7 @@ async function download(url: string, formatId: string, outputDir: string, info?:
   if (transferArgs.includes('http:aria2c')) transferArgs.push('--paths', `temp:${join(outputPath, '.aria2')}`);
   const args = [
     ...getBaseArgs(), ...transferArgs,
-    '-f', formatId, '--paths', outputPath, '-o', '%(title)s.%(ext)s',
+    '-f', formatId, '--paths', outputPath, '-o', options.onOutput ? '%(title)s [%(id)s].%(ext)s' : '%(title)s.%(ext)s',
     ...extra, '--progress',
     ...(options.onOutput ? ['--newline', '--progress-delta', '0.3', '--progress-template',
       'download:yt-down-progress:%(progress)j', '--print', 'after_move:yt-down-file:%(filepath)j'] : []),
