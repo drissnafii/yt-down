@@ -35,14 +35,14 @@ export default class YtDownExtension extends Extension {
   private searchButton?: St.Button;
   private cancelButton?: St.Button;
   private status?: St.Label;
-  private statusIcon?: St.Icon;
+  private statusRow?: St.BoxLayout;
+  private inputError?: St.Label;
   private activity?: Animation.Spinner;
   private panelActivity?: Animation.Spinner;
   private panelIcon?: St.Icon;
   private panelRing?: St.DrawingArea;
   private videoInfo?: St.BoxLayout;
-  private clearButton?: St.Button;
-  private urlField?: St.BoxLayout;
+  private urlField?: St.Widget;
   private moreHint?: St.Label;
   private title?: St.Label;
   private skeleton?: St.BoxLayout;
@@ -125,20 +125,24 @@ export default class YtDownExtension extends Extension {
     content.add_child(header);
 
     const input = new St.BoxLayout({ style_class: 'yt-down-input' });
-    this.urlField = new St.BoxLayout({ style_class: 'yt-down-url-field', x_expand: true,
+    this.urlField = new St.Widget({ layout_manager: new Clutter.BinLayout(), style_class: 'yt-down-url-field', x_expand: true,
       min_width: 0, natural_width: 0, clip_to_allocation: true });
     this.entry = new St.Entry({ min_width: 0, natural_width: 0, hint_text: 'Paste a video link…', can_focus: true, x_expand: true,
       accessible_name: 'Video URL', style_class: 'yt-down-entry' });
     this.entry.clutter_text.min_width = 0;
     this.entry.clutter_text.natural_width = 0;
-    this.clearButton = new St.Button({ can_focus: true, accessible_name: 'Clear link',
-      style_class: 'yt-down-clear', y_align: Clutter.ActorAlign.CENTER });
-    this.clearButton.set_child(this.icon('edit-clear-symbolic', 14));
-    this.clearButton.connect('clicked', () => this.clear());
     this.entry.clutter_text.connect('activate', () => this.fetchFormats());
     this.entry.clutter_text.connect('text-changed', () => this.onInput());
     this.urlField.add_child(this.entry);
-    this.urlField.add_child(this.clearButton);
+    this.inputError = this.label('', 'yt-down-input-error');
+    this.inputError.visible = false;
+    this.inputError.reactive = false;
+    this.urlField.add_child(this.inputError);
+    this.entry.clutter_text.connect('button-press-event', () => {
+      this.setInputError('');
+      return Clutter.EVENT_PROPAGATE;
+    });
+    this.entry.clutter_text.connect('key-focus-in', () => this.setInputError(''));
     input.add_child(this.urlField);
     this.searchButton = new St.Button({ can_focus: true, accessible_name: 'Find video',
       style_class: 'yt-down-icon-button' });
@@ -174,11 +178,10 @@ export default class YtDownExtension extends Extension {
 
     const footer = this.column('yt-down-footer');
     menu.box.add_child(footer);
-    const statusRow = new St.BoxLayout({ style_class: 'yt-down-status-row' });
+    this.statusRow = new St.BoxLayout({ style_class: 'yt-down-status-row', visible: false });
     this.activity = new Animation.Spinner(18);
     this.activity.visible = false;
-    this.statusIcon = this.icon('insert-link-symbolic');
-    this.status = this.label('A link is all you need. Paste one to get started.', 'yt-down-status', true);
+    this.status = this.label('', 'yt-down-status', true);
     this.cancelButton = new St.Button({ label: 'Cancel', can_focus: true, accessible_name: 'Cancel current task',
       style_class: 'yt-down-cancel', visible: false });
     this.cancelButton.connect('clicked', () => {
@@ -186,11 +189,10 @@ export default class YtDownExtension extends Extension {
       this.setStatus('Cancelling…');
       if (this.cancelButton) this.cancelButton.reactive = false;
     });
-    statusRow.add_child(this.activity);
-    statusRow.add_child(this.statusIcon);
-    statusRow.add_child(this.status);
-    statusRow.add_child(this.cancelButton);
-    footer.add_child(statusRow);
+    this.statusRow.add_child(this.activity);
+    this.statusRow.add_child(this.status);
+    this.statusRow.add_child(this.cancelButton);
+    footer.add_child(this.statusRow);
     this.jobsHeading = this.label('', 'yt-down-secondary');
     this.jobsHeading.visible = false;
     footer.add_child(this.jobsHeading);
@@ -218,7 +220,7 @@ export default class YtDownExtension extends Extension {
     if (this.more) this.more.visible = false;
     if (this.videoInfo) this.videoInfo.visible = false;
     this.setPhase('idle');
-    this.setStatus('Paste a link, or press Enter to find a video.');
+    this.setStatus('');
     const url = normalizeVideoUrl(this.entry?.get_text() ?? '');
     if (url) {
       this.debounce = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 350, () => {
@@ -377,7 +379,7 @@ export default class YtDownExtension extends Extension {
     this.more?.menu.close(); if (this.more) this.more.visible = false;
     this.videoInfo!.visible = false;
     this.loadedUrl = ''; this.setEntry(''); this.setPhase('idle');
-    this.setStatus('Paste another link to add a download.');
+    this.setStatus('');
     this.entry?.grab_key_focus();
     this.syncJobs();
   }
@@ -537,24 +539,27 @@ export default class YtDownExtension extends Extension {
     this.phase = phase;
     const busy = this.busy();
     if (this.entry) { this.entry.clutter_text.editable = !busy; this.entry.reactive = !busy; }
-    if (this.clearButton) { this.clearButton.reactive = !busy; this.clearButton.can_focus = !busy; }
     if (this.searchButton) this.searchButton.visible = !busy && phase !== 'ready';
     if (this.cancelButton) { this.cancelButton.visible = busy; this.cancelButton.reactive = busy; }
     if (this.skeleton) this.skeleton.visible = phase === 'searching';
-    if (this.statusIcon) {
-      this.statusIcon.visible = !busy;
-      this.statusIcon.icon_name = phase === 'error' ? 'dialog-warning-symbolic'
-        : phase === 'ready' ? 'object-select-symbolic' : 'insert-link-symbolic';
-    }
+    if (this.statusRow) this.statusRow.visible = busy;
+    this.setInputError('');
     this.syncMotion();
     this.syncPanel();
   }
 
   private setStatus(text: string, error = false): void {
-    if (!this.status) return;
-    this.status.text = text;
-    if (error) this.status.add_style_class_name('yt-down-error');
-    else this.status.remove_style_class_name('yt-down-error');
+    if (this.status) this.status.text = text;
+    this.setInputError(error ? text : '');
+  }
+
+  private setInputError(text: string): void {
+    if (!this.entry || !this.inputError) return;
+    this.inputError.text = text;
+    this.inputError.visible = Boolean(text);
+    // Keep the original URL editable beneath the error; typing or clicking reveals it.
+    this.entry.opacity = text ? 0 : 255;
+    this.entry.accessible_name = text ? `Video URL: ${text}` : 'Video URL';
   }
 
   private motionAllowed(): boolean {
@@ -673,13 +678,13 @@ export default class YtDownExtension extends Extension {
     this.searchButton = undefined;
     this.cancelButton = undefined;
     this.status = undefined;
-    this.statusIcon = undefined;
+    this.statusRow = undefined;
+    this.inputError = undefined;
     this.activity = undefined;
     this.panelActivity = undefined;
     this.panelIcon = undefined;
     this.panelRing = undefined;
     this.videoInfo = undefined;
-    this.clearButton = undefined;
     this.urlField = undefined;
     this.moreHint = undefined;
     this.title = undefined;

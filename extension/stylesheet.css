@@ -6,7 +6,7 @@
 .yt-down-icon-button { min-width: 40px; min-height: 40px; border-radius: 6px; padding: 2px; }
 .yt-down-icon-button:hover, .yt-down-icon-button:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-input { spacing: 8px; }
-.yt-down-url-field { border-radius: 10px; padding-right: 4px; background-color: rgba(128,128,128,0.16); }
+.yt-down-url-field { border-radius: 10px; background-color: rgba(128,128,128,0.16); }
 .yt-down-clear { min-width: 28px; min-height: 28px; border-radius: 8px; padding: 2px; }
 .yt-down-clear:hover, .yt-down-clear:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-entry { min-width: 0; min-height: 28px; border: none; border-radius: 10px; padding: 8px 10px; background-color: transparent; }
@@ -51,3 +51,5 @@
 .yt-down-finished:hover, .yt-down-finished:focus { background-color: rgba(128,128,128,0.12); }
 .yt-down-row-action { min-width: 28px; min-height: 28px; padding: 2px; border-radius: 4px; }
 .yt-down-row-action:hover, .yt-down-row-action:focus { background-color: rgba(128,128,128,0.24); }
+
+.yt-down-input-error { color: #f66151; font-size: 0.9em; padding: 0 10px; min-width: 0; }
