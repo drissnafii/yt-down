@@ -22,7 +22,7 @@ jobs:
     env:
       YT_DLP_COOKIES: none
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
@@ -81,7 +81,7 @@ jobs:
           if [ -d /run/systemd/seats ]; then rmdir /run/systemd/seats; fi
           useradd --create-home --uid 1000 yt-down-ci
           install -d -m 700 -o 1000 -g 1000 /tmp/yt-down-runtime
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
