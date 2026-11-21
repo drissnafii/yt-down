@@ -26,18 +26,19 @@ type Mode = 'video' | 'podcast';
 
 function showLogo(): void {
   const red = chalk.red.bold;
+  const cyan = chalk.cyan.bold;
   const white = chalk.white;
   const dim = chalk.dim;
 
   console.log('');
-  console.log(white('  ⬡ ⬢ ⬡') + '     ' + red('██╗   ██╗ ████████╗') + '        ' + red('██████╗   ██████╗  ██╗    ██╗ ███╗   ██╗'));
-  console.log(white(' ⬢ ⬡ ⬢ ⬡') + '    ' + red('╚██╗ ██╔╝ ╚══██╔══╝') + '        ' + red('██╔══██╗ ██╔═══██╗ ██║    ██║ ████╗  ██║'));
-  console.log(white('⬡ ⬢ ⬡ ⬢ ⬡') + '   ' + red(' ╚████╔╝     ██║   ') + red('█████╗') + ' ' + red('██║  ██║ ██║   ██║ ██║ █╗ ██║ ██╔██╗ ██║'));
-  console.log(white(' ⬢ ⬡ ⬢ ⬡') + '    ' + red('  ╚██╔╝      ██║   ') + red('╚════╝') + ' ' + red('██║  ██║ ██║   ██║ ██║███╗██║ ██║╚██╗██║'));
-  console.log(white('  ⬡ ⬢ ⬡') + '     ' + red('   ██║       ██║   ') + '        ' + red('██████╔╝ ╚██████╔╝ ╚███╔███╔╝ ██║ ╚████║'));
-  console.log(white('   ⬢ ⬡') + '      ' + red('   ╚═╝       ╚═╝   ') + '        ' + red('╚═════╝   ╚═════╝   ╚══╝╚══╝  ╚═╝  ╚═══╝'));
+  console.log(white('  ⬡ ⬢ ⬡') + '   ' + red('██████╗   ██████╗  ██╗    ██╗ ███╗   ██╗') + '   ' + cyan('██████╗  ███████╗ ██╗   ██╗'));
+  console.log(white(' ⬢ ⬡ ⬢ ⬡') + '  ' + red('██╔══██╗ ██╔═══██╗ ██║    ██║ ████╗  ██║') + '   ' + cyan('██╔══██╗ ██╔════╝ ██║   ██║'));
+  console.log(white('⬡ ⬢ ⬡ ⬢ ⬡') + ' ' + red('██║  ██║ ██║   ██║ ██║ █╗ ██║ ██╔██╗ ██║') + '   ' + cyan('██║  ██║ █████╗   ██║   ██║'));
+  console.log(white(' ⬢ ⬡ ⬢ ⬡') + '  ' + red('██║  ██║ ██║   ██║ ██║███╗██║ ██║╚██╗██║') + '   ' + cyan('██║  ██║ ██╔══╝   ╚██╗ ██╔╝'));
+  console.log(white('  ⬡ ⬢ ⬡') + '   ' + red('██████╔╝ ╚██████╔╝ ╚███╔███╔╝ ██║ ╚████║') + '   ' + cyan('██████╔╝ ███████╗  ╚████╔╝ '));
+  console.log(white('   ⬢ ⬡') + '    ' + red('╚═════╝   ╚═════╝   ╚══╝╚══╝  ╚═╝  ╚═══╝') + '   ' + cyan('╚═════╝  ╚══════╝   ╚═══╝  '));
   console.log('');
-  console.log(dim('        Interactive Video Downloader  v1.0'));
+  console.log(dim('                     DownDev Video Downloader  v1.0 (yt-down)'));
   console.log('');
 }
 
@@ -47,7 +48,7 @@ export async function main(): Promise<void> {
   showLogo();
 
   // Step 1 — Intro
-  p.intro(chalk.bgRed.white.bold(' ⬢  yt-down  ⬢ ') + chalk.dim('  Interactive Video Downloader'));
+  p.intro(chalk.bgRed.white.bold(' ⬢  DownDev  ⬢ ') + chalk.dim('  Interactive Video Downloader (yt-down)'));
 
   // Step 2 — Select mode
   const mode = await p.select({
