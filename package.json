@@ -20,7 +20,7 @@
     "benchmark:gnome": "bun run scripts/benchmark-gnome.ts"
   },
   "dependencies": {
-    "@clack/prompts": "^0.11.0",
+    "@clack/prompts": "^1.9.0",
     "chalk": "^5.6.2"
   },
   "devDependencies": {
