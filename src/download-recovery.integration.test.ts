@@ -163,7 +163,7 @@ test.skipIf(!Bun.which('yt-dlp') || !Bun.which('aria2c'))('real aria2 direct dow
     res.end(content.subarray(start, end + 1));
   });
   const base = await listen();
-  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c' }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c', findExecutable: Bun.which }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
     signal: AbortSignal.timeout(10_000),
   });
   expect(ranges.length).toBeGreaterThan(0);
@@ -190,7 +190,7 @@ test.skipIf(!Bun.which('yt-dlp') || !Bun.which('aria2c'))('real aria2 HTTP rejec
     res.end(content.subarray(start, end + 1));
   });
   const base = await listen();
-  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c' }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
+  await runDownload(['yt-dlp', '--ignore-config', '--proxy', '', ...getTransferArgs({ fragments: '4', downloader: 'aria2c', findExecutable: Bun.which }), '--paths', dir, '--paths', `temp:${join(dir, '.aria2')}`, '-o', 'video.mp4', `${base}/video.mp4`], {
     retryDelaysMs: [1], onRetry: () => { refreshed = true; }, signal: AbortSignal.timeout(10_000),
   });
   expect(rejected).toBe(true);

@@ -18,7 +18,9 @@ mise exec -- bun run extension:build
 ```
 
 The extension build needs `glib-compile-schemas` from your distribution's GLib
-tools. Tests using yt-dlp and ffmpeg skip when those tools are unavailable.
+tools. Tests using yt-dlp and ffmpeg skip when those tools are unavailable. GJS worker
+integration tests require GJS, Python 3 and standard Linux process utilities;
+CI installs these tools. The installed extension itself does not require Bun.
 To run the GNOME UI checks on a compatible Linux desktop:
 
 ```sh

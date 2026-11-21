@@ -10,7 +10,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import { Backend, findBun } from './client.js';
+import { Backend } from './client.js';
+import { workerCommand, setupMessage } from './dependencies.js';
 import { MediaOpener } from './media.js';
 import { TaskQueue } from './queue.js';
 import { choiceKey, choiceLabel, qualityBadge, groupChoices, higherQualityHint, automaticChoice } from './choices.js';
@@ -207,7 +208,11 @@ export default class YtDownExtension extends Extension {
     menu.connect('open-state-changed', (_menu, open: boolean) => {
       this.syncMotion();
       for (const job of this.jobs) this.updateCompletedActions(job);
-      if (open) this.checkClipboard();
+      if (open) {
+        const setup = setupMessage();
+        if (setup) this.setStatus(setup, true);
+        else this.checkClipboard();
+      }
     });
     Main.panel.addToStatusArea(this.uuid, this.button);
   }
@@ -215,6 +220,7 @@ export default class YtDownExtension extends Extension {
   private onInput(): void {
     if (this.suppressEntry || this.busy()) return;
     this.clearDebounce();
+    this.backend?.destroy(); this.backend = undefined;
     this.formats?.removeAll();
     this.more?.menu.removeAll();
     if (this.more) this.more.visible = false;
@@ -250,6 +256,7 @@ export default class YtDownExtension extends Extension {
 
   private onClipboardInput(): void {
     this.clearDebounce();
+    this.backend?.destroy(); this.backend = undefined;
     this.loadedUrl = '';
     this.formats?.removeAll();
     this.more?.menu.removeAll();
@@ -268,6 +275,7 @@ export default class YtDownExtension extends Extension {
   private clear(): void {
     if (this.busy()) return;
     this.clearDebounce();
+    this.backend?.destroy(); this.backend = undefined;
     this.loadedUrl = '';
     this.setEntry('');
     this.onInput();
@@ -279,6 +287,9 @@ export default class YtDownExtension extends Extension {
     this.clearDebounce();
     const url = normalizeVideoUrl(this.entry.get_text());
     if (!url) { this.setPhase('error'); this.setStatus('Enter a valid HTTP or HTTPS video link.', true); return; }
+    const setup = setupMessage();
+    if (setup) { this.setPhase('error'); this.setStatus(setup, true); return; }
+    this.backend?.destroy(); this.backend = undefined;
     this.pendingAutoDownload = autoDownload;
     this.loadedUrl = url;
     this.setEntry(url);
@@ -376,7 +387,7 @@ export default class YtDownExtension extends Extension {
     card.add_child(detail);
     const actions = new St.BoxLayout({ style_class: 'yt-down-completion', visible: false });
     const job: DownloadJob = { url: this.loadedUrl, title: this.title!.text, choice, directory, state: 'queued', percent: null,
-      filePath: '', card, summary, header, size, progress, fill, label, detail, cancel, actions,
+      filePath: '', backend: this.backend, card, summary, header, size, progress, fill, label, detail, cancel, actions,
       openFile: this.rowAction('media-playback-start-symbolic', 'Open file', () => { void this.openMedia(job.filePath); }) };
     actions.add_child(job.openFile);
     actions.add_child(this.rowAction('folder-open-symbolic', 'Open folder', () => this.openPath(job.directory)));
@@ -384,6 +395,7 @@ export default class YtDownExtension extends Extension {
     card.connect('notify::hover', () => this.updateCompletedActions(job));
     cancel.connect('clicked', () => this.cancelJob(job));
     progress.connect('notify::width', () => this.updateJobProgress(job));
+    this.backend = undefined; // Transfer the prepared metadata session to this job.
     this.jobs.push(job); this.jobsBox!.add_child(card);
     this.queue!.add(job, `${directory}\0${job.url}`);
     // Keep the activating row alive until its signal finishes, but release the input.
@@ -400,14 +412,15 @@ export default class YtDownExtension extends Extension {
     job.state = 'active'; job.label.text = `${choiceLabel(job.choice)} · Connecting…`;
     job.detail.text = 'Starting download…';
     try {
-      const backend = new Backend(); job.backend = backend;
-      backend.start([findBun(this.settings!.get_string('bun-path')), `${this.path}/backend.js`, '--json',
-        'download', job.url, job.choice.mode, job.choice.id, job.directory], event => this.onJobEvent(job, event), () => {
+      const backend = job.backend ?? new Backend(); job.backend = backend;
+      const onEvent = (event: BackendEvent) => this.onJobEvent(job, event);
+      const onEnd = () => {
         job.backend = undefined;
         job.cancel.reactive = true;
         if (['complete', 'error', 'cancelled'].includes(job.state)) this.finishJobControls(job);
         done(); this.syncJobs();
-      });
+      };
+      backend.download({ url: job.url, mode: job.choice.mode, id: job.choice.id, directory: job.directory }, onEvent, onEnd);
     } catch (error) {
       job.backend?.destroy(); job.backend = undefined;
       this.onJobEvent(job, { type: 'error', message: String(error) });
@@ -501,6 +514,7 @@ export default class YtDownExtension extends Extension {
   private dismissJob(job: DownloadJob): void {
     this.jobs = this.jobs.filter(item => item !== job);
     job.sizeQuery?.cancel();
+    job.backend?.destroy(); job.backend = undefined;
     job.fill.remove_all_transitions(); job.card.destroy();
   }
 
@@ -521,10 +535,10 @@ export default class YtDownExtension extends Extension {
 
   private run(args: string[]): void {
     try {
-      const argv = [findBun(this.settings!.get_string('bun-path')), `${this.path}/backend.js`, '--json', ...args];
+      const argv = workerCommand(this.path, ...args);
       const backend = new Backend();
       this.backend = backend;
-      backend.start(argv, event => this.onEvent(event), () => {
+      backend.start(argv, event => { if (this.backend === backend) this.onEvent(event); }, () => {
         if (this.backend === backend) this.backend = undefined;
       });
     } catch (error) {

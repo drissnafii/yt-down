@@ -32,11 +32,15 @@ if (process.argv[2] !== '--session') {
     await writeFile(join(extensions, helperUuid, 'extension.js'), `
       import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
       import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+      import * as Config from 'resource:///org/gnome/shell/misc/config.js';
       import Gio from 'gi://Gio';
       import GLib from 'gi://GLib';
       export default class Test extends Extension {
         enable() {
+          global.settings.set_string('welcome-dialog-last-shown-version', Config.PACKAGE_VERSION);
           global.context.unsafe_mode = true;
+          globalThis.__hideOverview = () => Main.overview.hide();
+          globalThis.__clearNotifications = () => Main.messageTray.getSources().forEach(source => source.destroy());
           globalThis.__mediaRaises = 0;
           globalThis.__mediaLaunches = 0;
           globalThis.__mediaUrl = ${JSON.stringify('file://' + join(dir, 'example.mp4'))};
@@ -55,28 +59,30 @@ if (process.argv[2] !== '--session') {
         disable() { this.root.unexport(); this.player.unexport(); Gio.bus_unown_name(this.name); delete globalThis.__getYtDown; global.context.unsafe_mode = false; }
       }
     `);
-    // Exercise the frontend without network traffic, browser cookies or real downloads.
-    await writeFile(join(extensions, uuid, 'backend.js'), `
-      const emit = event => console.log(JSON.stringify(event));
-      const args = process.argv.slice(2);
-      if (args.includes('formats')) {
-        await Bun.sleep(700);
-        emit({type:'formats',title:'A video title that wraps gracefully across lines',channel:'Test channel',duration:761,
-          choices:[{id:'best',mode:'video',label:'Best quality',sizeLabel:'Auto'},
-          ...[2160,1080,720,480,360].map(height=>({id:String(height),mode:'video',label:height+'p',height,variant:'quality',sizeLabel:'35.5 MB'})),
-          {id:'best',mode:'mp3',label:'Audio only',sizeLabel:'MP3'}]});
-      } else {
-        emit({type:'progress',percent:50,speed:1048576,eta:10});
-        await Bun.sleep(args.some(arg=>arg.includes('batch')) ? 5000 : 700);
-        const output = ${JSON.stringify(join(dir, 'example.mp4'))};
-        await Bun.write(output, new Uint8Array(1572864));
-        emit({type:'file',path:output});
-        emit({type:'complete',directory:'/tmp'});
-      }
-    `);
+    // Exercise the real GJS worker and controller using a fake yt-dlp executable.
+    const fakeDownloader = join(dir, 'yt-dlp');
+    await writeFile(fakeDownloader, `#!/usr/bin/python3
+import sys, json, time, os
+args = sys.argv[1:]
+if '-j' in args:
+    time.sleep(0.7)
+    print(json.dumps({'id':'test','title':'A walk through the mountains','duration':761,
+      'webpage_url':args[-1], 'original_url':args[-1], 'formats':[
+        *[{'format_id':str(h),'ext':'mp4','height':h,'vcodec':'h264','acodec':'aac','filesize':35000000} for h in [360,480,720,1080,2160]],
+        {'format_id':'audio','ext':'m4a','vcodec':'none','acodec':'aac','abr':128,'filesize':1000000}]}), flush=True)
+else:
+    print('yt-down-progress:'+json.dumps({'downloaded_bytes':50,'total_bytes':100,'speed':1048576,'eta':10}),flush=True)
+    cached = args[args.index('--load-info-json')+1] if '--load-info-json' in args else None
+    info = json.load(open(cached)) if cached else {}
+    url = args[-1] if not cached else info.get('original_url','')
+    time.sleep(5 if 'batch' in url else 0.7)
+    output = ${JSON.stringify(join(dir, 'example.mp4'))}
+    with open(output,'wb') as f: f.write(bytes(1572864))
+    print('yt-down-file:'+json.dumps(output),flush=True)
+`, { mode: 0o755 });
     const env = { ...process.env, GSETTINGS_BACKEND: 'memory',
       XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'), XDG_CACHE_HOME: join(dir, 'cache'),
-      LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DOWN_SMOKE_BUN: process.execPath };
+      LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DLP_BIN: fakeDownloader, YT_DLP_COOKIES: 'none' };
     await command(['dbus-run-session', '--', process.execPath, import.meta.path, '--session'], env);
     console.log('GNOME UI: multi-site paste, opt-in automatic downloads, clipboard safeguards, search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and cleanup passed.');
   } finally {
@@ -114,10 +120,22 @@ if (process.argv[2] !== '--session') {
     const result = await evaluate(`(() => { const e = globalThis.__getYtDown(); return (${expression}) ? 'PASS' : 'FAIL'; })()`);
     if (!result.includes('"PASS"')) throw new Error(`${label}: ${result}; ` + await evaluate("JSON.stringify({phase:globalThis.__getYtDown().phase,open:globalThis.__getYtDown().button.menu.isOpen,ring:globalThis.__getYtDown().panelRing.visible,jobs:globalThis.__getYtDown().jobs.length})"));
   };
+  const capture = async (name: string) => {
+    if (!process.env.YT_DOWN_SCREENSHOT_DIR) return;
+    await mkdir(process.env.YT_DOWN_SCREENSHOT_DIR, { recursive: true });
+    await evaluate("globalThis.__clearNotifications(); 'OK'");
+    await delay(300);
+    const bounds = await evaluate("(() => { const a=globalThis.__getYtDown().button.menu.actor; const [x,y]=a.get_transformed_position(); const left=Math.max(0,Math.floor(x)-8); return [left,0,Math.min(1280-left,Math.ceil(a.width)+16),Math.min(900,Math.ceil(y+a.height)+8)].join(','); })()");
+    const area = bounds.match(/\d+,\d+,\d+,\d+/)![0].split(',');
+    await command(['gdbus', 'call', '--session', '--dest', 'org.gnome.Shell.Screenshot',
+      '--object-path', '/org/gnome/Shell/Screenshot', '--method', 'org.gnome.Shell.Screenshot.ScreenshotArea',
+      ...area, 'false', join(process.env.YT_DOWN_SCREENSHOT_DIR, name + '.png')]);
+  };
   try {
     await waitFor(() => call('org.gnome.Shell.Extensions.EnableExtension', helperUuid), value => value.includes('true'), 'test helper');
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown)'), value => value.includes("'true'"), 'helper initialized');
     await waitFor(() => evaluate('globalThis.__shellReady()'), value => value.includes("'true'"), 'shell startup complete');
+    await evaluate("globalThis.__hideOverview(); 'OK'");
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.entry)'), value => value.includes("'true'"), 'extension initialized');
     await check("!e.settings.get_boolean('clipboard-autofetch')", 'clipboard access is opt-in');
@@ -125,11 +143,15 @@ if (process.argv[2] !== '--session') {
     await check("e.inputError.visible && e.inputError.get_parent() === e.urlField && !e.statusRow.visible && e.entry.get_text() === 'invalid'", 'validation stays inside input and preserves text');
     await evaluate("globalThis.__getYtDown().entry.set_text('correction'); 'OK'");
     await check("!e.inputError.visible && e.entry.opacity === 255 && !e.statusRow.visible", 'editing dismisses inline error without an idle helper row');
+    await evaluate("globalThis.__downloader=imports.gi.GLib.getenv('YT_DLP_BIN'); imports.gi.GLib.setenv('YT_DLP_BIN','/missing/yt-dlp',true); globalThis.__getYtDown().setEntry('https://youtu.be/test'); globalThis.__getYtDown().fetchFormats(); 'OK'");
+    await check("e.phase === 'error' && e.inputError.text.includes('Setup needed') && !e.backend", 'missing dependency uses the input with setup guidance');
+    await evaluate("imports.gi.GLib.setenv('YT_DLP_BIN',globalThis.__downloader,true); 'OK'");
     await evaluate(`(() => { const e = globalThis.__getYtDown(); e.settings.set_boolean('clipboard-autofetch',false);
-      e.settings.set_string('bun-path',${JSON.stringify(process.env.YT_DOWN_SMOKE_BUN)});
+      e.settings.set_string('output-directory',${JSON.stringify(join(process.env.YT_DOWN_SMOKE_DIR!, 'downloads'))});
       e.button.menu.open(); e.setEntry('https://youtu.be/test'); e.fetchFormats(); return 'OK'; })()`);
     await check("e.phase === 'searching' && e.skeleton.visible", 'immediate loading feedback');
     await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'format result');
+    await capture('formats');
     await check("e.formats._getMenuItems().length === 3 && e.more.visible && e.videoInfo.visible && e.moreHint.text === '4K available'", 'simple presets and 4K availability');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.setEntry('https://www.youtube.com/watch?v=test&tracking='+'x'.repeat(500)); return 'OK'; })()");
     await delay(150);
@@ -165,6 +187,7 @@ if (process.argv[2] !== '--session') {
       await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'next video formats while downloading');
       await evaluate("(() => { const e=globalThis.__getYtDown(); e.formats._getMenuItems()[0].emit('activate',null); return 'OK'; })()");
     }
+    await capture('downloads');
     await check("e.queue.active === 2 && e.queue.queued === 1 && e.entry.clutter_text.editable", 'two simultaneous downloads and an editable input');
     await check("e.jobs.filter(j=>j.state==='active').length === 2 && e.jobs.filter(j=>j.state==='queued').length === 1", 'independent job state');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.cancelJob(e.jobs.find(j=>j.state==='active')); return 'OK'; })()");
@@ -175,7 +198,7 @@ if (process.argv[2] !== '--session') {
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.entry)'), value => value.includes("'true'"), 're-enable after cleanup');
-    await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_string('bun-path', " + JSON.stringify(process.env.YT_DOWN_SMOKE_BUN) + "); e.settings.set_boolean('clipboard-autofetch', false); e.button.menu.open(); e.entry.set_text('https://vimeo.com/123'); return 'OK'; })()");
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_string('output-directory', " + JSON.stringify(join(dir, 'downloads')) + "); e.settings.set_boolean('clipboard-autofetch', false); e.button.menu.open(); e.entry.set_text('https://vimeo.com/123'); return 'OK'; })()");
     await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'pasted non-YouTube URL fetches without Enter');
     await check("e.jobs.length === 0", 'direct downloading is off by default');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_boolean('download-on-paste', true); e.settings.set_string('last-choice', 'video:720:quality'); e.entry.set_text('https://de.pornhub.com/view_video.php?viewkey=6af5118b07e59'); return 'OK'; })()");
@@ -189,6 +212,18 @@ if (process.argv[2] !== '--session') {
     await evaluate("globalThis.__getYtDown().fetchFormats(); 'OK'");
     await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'confirmed clipboard URL fetches formats');
     await check("e.jobs.length === 1", 'clipboard detection does not automatically download');
+    if (process.env.YT_DOWN_SCREENSHOT_DIR) {
+      await command(['dbus-update-activation-environment', `WAYLAND_DISPLAY=yt-down-smoke-${process.pid}`]);
+      await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_string('output-directory',''); e.button.menu.close(); e.openPreferences(); return 'OK'; })()");
+      await waitFor(() => evaluate("global.get_window_actors().some(a=>a.meta_window.get_title()?.includes('yt-down'))"), value => value.includes("'true'"), 'preferences window');
+      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window.activate(global.get_current_time()); 'OK'");
+      await evaluate("globalThis.__clearNotifications(); 'OK'");
+      await delay(800);
+      const bounds = await evaluate("(() => { const w=global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window; const r=w.get_frame_rect(); return [r.x,r.y,r.width,r.height].join(','); })()");
+      await command(['gdbus','call','--session','--dest','org.gnome.Shell.Screenshot','--object-path','/org/gnome/Shell/Screenshot',
+        '--method','org.gnome.Shell.Screenshot.ScreenshotArea',...bounds.match(/\d+,\d+,\d+,\d+/)![0].split(','),'false',join(process.env.YT_DOWN_SCREENSHOT_DIR,'preferences.png')]);
+      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window.delete(global.get_current_time()); 'OK'");
+    }
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);
     const logs = await readLogs();
     if (/JS ERROR|Extension yt-down@drissnafii:|Theme parsing error/.test(logs)) throw new Error(`Shell reported errors:\n${logs}`);

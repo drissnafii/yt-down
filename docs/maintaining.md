@@ -53,23 +53,21 @@ The extension has not been submitted. Review the current
 [GNOME guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)
 before every submission. In particular:
 
-- **External backend remains a submission concern.** The ZIP bundles a Bun
-  backend and requires separately installed Bun, yt-dlp, and ffmpeg. GNOME
-  strongly discourages external scripts and requires GJS unless another
-  language is necessary. Seek reviewer guidance with the actual architecture.
-  A separately installed downloader or GJS frontend calling yt-dlp directly
-  may be needed; merely moving files does not guarantee acceptance.
+- **Architecture:** the ZIP now includes a standalone GJS worker that directly
+  invokes separately installed yt-dlp and ffmpeg. There is no Bun backend or
+  executable binary in the ZIP. Heavy parsing and retry work stay outside Shell.
+  Explain the external tools to reviewers; this architecture does not guarantee
+  approval. No automatic dependency installation is implemented.
 - **Clipboard:** access is disclosed in metadata and off by default. When
   enabled, it only fills the field locally; Enter or Find video authorizes
   sending the URL. Verify this behavior in the smoke test.
 - **Cookies:** browser discovery requires explicit `YT_DLP_COOKIES=auto` or a
   browser selection. Do not include cookies or private profiles in the ZIP.
 - **Licensing:** the repository uses MIT, which permits GPL-compatible
-  redistribution. Include the project license and dependency notices. GNOME
+  redistribution. Include the project license and any required dependency notices. GNOME
   distributes extensions under GPL-compatible terms.
-- **Compatibility:** metadata declares GNOME 45–51, but automated runtime
-  testing currently covers GNOME 51. Verify claimed versions before upload
-  or narrow the declaration to versions actually verified.
+- **Compatibility:** metadata declares only GNOME 51, which the isolated UI
+  test covers. Add earlier versions only after verifying them.
 - **Presentation:** supply accurate screenshots and a description explaining
   prerequisites and privacy behavior. Do not claim GNOME approval before it
   has been granted. Maintainers must understand and explain submitted code.
@@ -79,9 +77,19 @@ before every submission. In particular:
 The workflow runs tests, CLI typecheck, and extension compilation (including
 the GNOME typecheck). It installs Bun through the checked-in mise config and
 uses the committed lockfile. Package lifecycle scripts and shared CI caches
-are disabled. Some media integration tests require optional local tools.
+are disabled. CI installs GJS, Python, yt-dlp and ffmpeg to exercise the worker
+and local media integration tests. The GNOME Shell UI smoke test runs locally.
+The yt-dlp test executable is pinned to an official release and verified against
+a checked-in SHA-256 digest; update the release and digest together after
+checking the upstream release checksums. Older distro yt-dlp packages may lack
+the JavaScript runtime flags used by the downloader.
 Workflow changes must retain the `checks` job name or update the ruleset too.
 
 Require the status check once it appears in GitHub. For an early CI
 failure, fix the branch and push again; do not disable branch protection to
 merge around it. Never automatically run untrusted code on a personal runner.
+
+
+The [listing kit](gnome-listing.md) contains prepared screenshots, icon and copy.
+The catalog controls the numeric `version`; metadata uses `version-name` for the
+human-facing version and declares the Gumroad support URL through `donations`.

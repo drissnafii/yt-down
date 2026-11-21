@@ -1,5 +1,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import { findTool } from './dependencies.js';
+import type { DownloadRequest } from './download-controller.js';
 import type { BackendEvent } from '../../src/protocol.js';
 
 /** One backend invocation. All pipe reads and process waits are asynchronous. */
@@ -10,9 +12,14 @@ export class Backend {
   private cancelled = false;
   private terminal = false;
   private errorTail = '';
+  private killTimer = 0;
+  private cacheDirectory = '';
+  private onEvent: (event: BackendEvent) => void = () => {};
+  private onEnd: () => void = () => {};
 
   start(argv: string[], onEvent: (event: BackendEvent) => void, onEnd: () => void): void {
-    const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+    this.onEvent = onEvent; this.onEnd = onEnd;
+    const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
     this.process = proc;
     const stdout = new Gio.DataInputStream({ base_stream: proc.get_stdout_pipe()! });
     const stderr = new Gio.DataInputStream({ base_stream: proc.get_stderr_pipe()! });
@@ -29,7 +36,7 @@ export class Backend {
               try { event = JSON.parse(line) as BackendEvent; }
               catch { read(); return; }
               if (['error', 'cancelled', 'complete', 'formats'].includes(event.type)) this.terminal = true;
-              onEvent(event);
+              this.onEvent(event);
             }
             read();
           } catch (error) {
@@ -46,27 +53,68 @@ export class Backend {
       resolve();
     }));
     void Promise.all([consume(stdout, false), consume(stderr, true), exited]).then(() => {
+      if (this.killTimer) { GLib.Source.remove(this.killTimer); this.killTimer = 0; }
       this.process = null;
+      this.cleanSnapshot();
       stdout.close(null);
       stderr.close(null);
       if (this.disposed) return;
       if (!this.terminal) {
-        onEvent(this.cancelled
+        this.onEvent(this.cancelled
           ? { type: 'cancelled', message: 'Cancelled. Partial downloads are kept.' }
           : { type: 'error', message: this.errorTail.trim() || 'Backend stopped before returning a result.' });
       }
-      onEnd();
+      this.onEnd();
     }).catch(error => {
       if (!this.disposed) {
-        onEvent({ type: 'error', message: String(error) });
-        onEnd();
+        this.onEvent({ type: 'error', message: String(error) });
+        this.onEnd();
       }
     });
   }
 
+  download(request: DownloadRequest, onEvent: (event: BackendEvent) => void, onEnd: () => void): void {
+    if (!this.process) throw new Error('The video session has ended. Paste the link again.');
+    this.onEvent = onEvent; this.onEnd = onEnd; this.terminal = false;
+    this.cacheDirectory = GLib.dir_make_tmp('yt-down-info-XXXXXX');
+    request = { ...request, cacheDirectory: this.cacheDirectory };
+    const stream = this.process.get_stdin_pipe()!;
+    stream.write_all_async(new GLib.Bytes(JSON.stringify(request) + '\n').toArray()!, GLib.PRIORITY_DEFAULT,
+      this.cancellable, (_stream, result) => {
+        try { stream.write_all_finish(result); stream.close(null); }
+        catch (error) { if (!this.disposed) this.onEvent({ type: 'error', message: String(error) }); this.cancel(); }
+      });
+  }
+
+  private signalGroup(signal: 'INT' | 'KILL'): void {
+    const pid = this.process?.get_identifier();
+    if (!pid || !/^\d+$/.test(pid)) return;
+    // No shell interpolation. The session contains the worker and every media child.
+    const kill = Gio.Subprocess.new([findTool('kill')!, `-${signal}`, '--', `-${pid}`], Gio.SubprocessFlags.NONE);
+    kill.wait_async(null, (_process, result) => { try { kill.wait_finish(result); } catch { /* Already exited. */ } });
+  }
+
+  private cleanSnapshot(): void {
+    const directory = this.cacheDirectory;
+    this.cacheDirectory = '';
+    if (!directory) return;
+    const folder = Gio.File.new_for_path(directory);
+    // Also remove metadata after a forced kill, where worker finally blocks cannot run.
+    folder.get_child('video.info.json').delete_async(GLib.PRIORITY_DEFAULT, null, (file, result) => {
+      try { (file as Gio.File).delete_finish(result); } catch { /* Worker normally removes it. */ }
+      folder.delete_async(GLib.PRIORITY_DEFAULT, null, (_folder, result) => {
+        try { folder.delete_finish(result); } catch { /* Already removed. */ }
+      });
+    });
+  }
+
   cancel(): void {
+    if (this.cancelled) return;
     this.cancelled = true;
-    this.process?.send_signal(15);
+    this.signalGroup('INT');
+    if (this.process) this.killTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, () => {
+      this.killTimer = 0; this.signalGroup('KILL'); return GLib.SOURCE_REMOVE;
+    });
   }
 
   destroy(): void {
@@ -74,19 +122,4 @@ export class Backend {
     this.cancel();
     this.cancellable.cancel();
   }
-}
-
-export function findBun(configured: string): string {
-  if (configured.trim()) return configured.trim();
-  const home = GLib.get_home_dir();
-  // GNOME sessions often lack the PATH additions from interactive shell startup.
-  for (const candidate of [
-    GLib.find_program_in_path('bun'),
-    `${home}/.local/share/mise/shims/bun`,
-    `${home}/.local/bin/bun`,
-    `${home}/.bun/bin/bun`,
-  ]) {
-    if (candidate && GLib.file_test(candidate, GLib.FileTest.IS_EXECUTABLE)) return candidate;
-  }
-  throw new Error('Bun was not found. Set its absolute path in yt-down Settings.');
 }

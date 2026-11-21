@@ -3,7 +3,9 @@
  * Uses Bun.spawn() for async, non-blocking execution.
  */
 
-import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.ts';
+import type { VideoInfo } from './format-model.ts';
+import { isSupportedBunVersion } from './js-runtime.ts';
+export * from './format-model.ts';
 import { getCookieArgs } from './cookies.ts';
 import { runDownload, type RecoveryOptions } from './download-recovery.ts';
 import { mkdir } from 'node:fs/promises';
@@ -12,72 +14,6 @@ import { getTransferArgs } from './transfer-options.ts';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { getOutputDirectory } from './output-directory.ts';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface YtDlpFormat {
-  format_id: string;
-  ext: string;
-  video_ext?: string;
-  resolution?: string;
-  width?: number | null;
-  height?: number | null;
-  fps?: number | null;
-  vcodec?: string;
-  acodec?: string;
-  filesize?: number | null;
-  filesize_approx?: number | null;
-  tbr?: number | null;   // total bitrate
-  abr?: number | null;   // audio bitrate
-  asr?: number | null;   // audio sample rate
-  format_note?: string;
-}
-
-/** Generic direct media often has an extension but no codecs or dimensions. */
-export function hasVideoFormats(info: VideoInfo): boolean {
-  return (info.formats ?? []).some(f => f.vcodec !== 'none' && Boolean(
-    f.vcodec || f.height || (f.video_ext && f.video_ext !== 'none')
-    || /^(mp4|webm|mkv|mov|flv|avi|m4v|ts|ogv)$/i.test(f.ext)));
-}
-
-export interface VideoInfo {
-  id: string;
-  title: string;
-  duration: number | null;
-  thumbnail?: string;
-  channel?: string;
-  upload_date?: string;
-  view_count?: number;
-  description?: string;
-  formats: YtDlpFormat[];
-  webpage_url: string;
-}
-
-export interface FormattedFormat {
-  formatId: string;
-  resolution: string;
-  height: number;
-  ext: string;
-  filesize: number | null;
-  filesizeLabel: string;
-  codec: string;
-  displayLabel: string;
-  isCombined: boolean;  // true for formats that have both video+audio
-  variant: 'quality' | 'smaller';
-  fps: number | null;
-  sizeEstimated: boolean;
-}
-
-export interface FormattedAudioFormat {
-  formatId: string;
-  ext: string;
-  filesize: number | null;
-  filesizeLabel: string;
-  codec: string;
-  bitrate: number;
-  bitrateLabel: string;
-  displayLabel: string;
-}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -98,7 +34,7 @@ function getJsRuntimeArgs(): string[] {
   const candidates: Array<string | null> = [
     getSupportedRuntime('deno'),
     getSupportedRuntime('node'),   // Node.js (nvm / system)
-    getSupportedBunRuntime(),      // Bun 1.2+
+    getSupportedBunRuntime(),      // Supported Bun challenge-solver versions only
     getSupportedRuntime('qjs', 'quickjs'),
   ];
 
@@ -123,19 +59,6 @@ function getSupportedBunRuntime(): string | null {
   // This backend is already running in Bun. An absolute path also works when
   // launched by GNOME without an interactive shell's runtime PATH.
   return isSupportedBunVersion(Bun.version) ? `bun:${process.execPath}` : null;
-}
-
-function isSupportedBunVersion(version: string): boolean {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) {
-    return false;
-  }
-
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-
-  // Bun >= 1.2 is supported as a yt-dlp JS runtime (no upper cap).
-  return major > 1 || (major === 1 && minor >= 2);
 }
 
 // ─── Video Info ──────────────────────────────────────────────────────────────
@@ -175,129 +98,6 @@ export async function getVideoInfo(url: string, signal?: AbortSignal): Promise<V
   }
 }
 
-// ─── Format Parsing ─────────────────────────────────────────────────────────
-
-/**
- * Parse video formats: filter video-only, group by resolution, pick best per group.
- * Also includes combined formats (like format 18 which has both video+audio).
- */
-export function parseVideoFormats(info: VideoInfo): FormattedFormat[] {
-  const available = info.formats ?? [];
-  const audio = available.filter(isAudioOnly).at(-1);
-  const groups = new Map<number, YtDlpFormat[]>();
-  for (const format of available) {
-    if (format.vcodec === 'none' || !format.height || format.height <= 0) continue;
-    const group = groups.get(format.height) ?? [];
-    group.push(format);
-    groups.set(format.height, group);
-  }
-
-  function describe(fmt: YtDlpFormat, variant: 'quality' | 'smaller'): FormattedFormat {
-    const combined = Boolean(fmt.acodec && fmt.acodec !== 'none');
-    const videoSize = estimateSize(fmt, info.duration);
-    const audioSize = audio ? estimateSize(audio, info.duration) : null;
-    const size = combined || !audio ? videoSize : videoSize && audioSize
-      ? { bytes: videoSize.bytes + audioSize.bytes, estimated: videoSize.estimated || audioSize.estimated }
-      : null;
-    const codec = [getCodecLabel(fmt.vcodec), getAudioCodecLabel(combined ? fmt.acodec : audio?.acodec)].filter(Boolean).join('+');
-    const resolution = getResolutionLabel(fmt.height!);
-    const sizeLabel = size ? `${size.estimated ? '~ ' : ''}${formatBytes(size.bytes)}` : '~ unknown';
-    const fps = fmt.fps ?? null;
-    return {
-      formatId: combined || !audio ? fmt.format_id : `${fmt.format_id}+${audio.format_id}`,
-      resolution,
-      height: fmt.height!,
-      ext: fmt.ext,
-      filesize: size?.bytes ?? null,
-      filesizeLabel: sizeLabel,
-      sizeEstimated: size?.estimated ?? false,
-      codec,
-      displayLabel: `${resolution}${fps ? ` ${fps}fps` : ''} (${variant === 'smaller' ? 'smaller file' : 'quality'})  │  ${sizeLabel} total  │  ${codec}`,
-      isCombined: combined,
-      variant,
-      fps,
-    };
-  }
-
-  return [...groups.entries()].sort(([a], [b]) => b - a).flatMap(([, formats]) => {
-    // yt-dlp lists formats from worst to best, accounting for codec and frame rate.
-    const quality = describe(formats.at(-1)!, 'quality');
-    const smaller = formats.map(fmt => describe(fmt, 'smaller'))
-      .filter(fmt => fmt.filesize !== null)
-      .sort((a, b) => a.filesize! - b.filesize!)[0];
-    // Avoid duplicate choices when estimated savings are negligible or unknown.
-    return smaller && quality.filesize !== null && smaller.formatId !== quality.formatId
-      && smaller.filesize! < quality.filesize * 0.9 ? [quality, smaller] : [quality];
-  });
-}
-
-function isAudioOnly(format: YtDlpFormat): boolean {
-  return (!format.vcodec || format.vcodec === 'none') && Boolean(format.acodec && format.acodec !== 'none');
-}
-
-function estimateSize(format: YtDlpFormat, duration: number | null): { bytes: number; estimated: boolean } | null {
-  if (format.filesize && format.filesize > 0) return { bytes: format.filesize, estimated: false };
-  if (format.filesize_approx && format.filesize_approx > 0) return { bytes: format.filesize_approx, estimated: true };
-  const bitrate = format.tbr ?? (isAudioOnly(format) ? format.abr : undefined);
-  if (duration && duration > 0 && bitrate && bitrate > 0) {
-    return { bytes: Math.round(bitrate * 1_000 * duration / 8), estimated: true };
-  }
-  return null;
-}
-
-/**
- * Parse audio formats: filter audio-only, sort by bitrate descending.
- */
-export function parseAudioFormats(info: VideoInfo): FormattedAudioFormat[] {
-  const formats = info.formats ?? [];
-
-  const audioFormats = formats.filter(
-    (f) =>
-      (f.vcodec === 'none' || f.vcodec === undefined) &&
-      f.acodec !== 'none' &&
-      f.acodec !== undefined
-  );
-
-  // Group by codec type, pick best bitrate per codec
-  const byCodec = new Map<string, YtDlpFormat>();
-
-  for (const fmt of audioFormats) {
-    const codec = getAudioCodecLabel(fmt.acodec);
-    const existing = byCodec.get(codec);
-
-    if (!existing) {
-      byCodec.set(codec, fmt);
-      continue;
-    }
-
-    const fmtBitrate = fmt.abr ?? fmt.tbr ?? 0;
-    const existingBitrate = existing.abr ?? existing.tbr ?? 0;
-
-    if (fmtBitrate > existingBitrate) {
-      byCodec.set(codec, fmt);
-    }
-  }
-
-  return [...byCodec.entries()]
-    .sort(([, a], [, b]) => (b.abr ?? b.tbr ?? 0) - (a.abr ?? a.tbr ?? 0))
-    .map(([codec, fmt]) => {
-      const filesize = fmt.filesize ?? fmt.filesize_approx ?? null;
-      const bitrate = fmt.abr ?? fmt.tbr ?? 0;
-      const bitrateLabel = `${Math.round(bitrate)}kbps`;
-
-      return {
-        formatId: fmt.format_id,
-        ext: fmt.ext,
-        filesize,
-        filesizeLabel: formatBytes(filesize),
-        codec,
-        bitrate,
-        bitrateLabel,
-        displayLabel: `${bitrateLabel} ${codec} (.${fmt.ext})  │  ${formatBytes(filesize)}`,
-      };
-    });
-}
-
 // ─── Download ────────────────────────────────────────────────────────────────
 
 /**
@@ -333,7 +133,7 @@ export async function downloadMp3(url: string, formatId: string, outputDir: stri
 
 async function download(url: string, formatId: string, outputDir: string, info?: VideoInfo, extra: string[] = [], options: RecoveryOptions = {}): Promise<string> {
   const outputPath = resolve(outputDir);
-  const transferArgs = getTransferArgs();
+  const transferArgs = getTransferArgs({ fragments: Bun.env.YT_DOWN_FRAGMENTS, downloader: Bun.env.YT_DOWN_DOWNLOADER, findExecutable: Bun.which, warn: console.error });
   // aria2 may create sparse partial files. Keep them apart from native partials,
   // which resume by byte length, so switching downloaders cannot corrupt a file.
   if (transferArgs.includes('http:aria2c')) transferArgs.push('--paths', `temp:${join(outputPath, '.aria2')}`);
@@ -355,18 +155,3 @@ async function download(url: string, formatId: string, outputDir: string, info?:
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getResolutionLabel(height: number): string {
-  const labels: Record<number, string> = {
-    2160: '2160p (4K)',
-    1440: '1440p',
-    1080: '1080p',
-    720: '720p',
-    480: '480p',
-    360: '360p',
-    240: '240p',
-    144: '144p',
-  };
-
-  return labels[height] ?? `${height}p`;
-}
