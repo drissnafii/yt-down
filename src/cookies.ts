@@ -14,8 +14,8 @@ export function getCookieArgs({
   home = homedir(),
   configHome = Bun.env.XDG_CONFIG_HOME ?? join(home, '.config'),
 }: CookieOptions = {}): string[] {
-  if (browser === 'none') return [];
-  if (browser && browser !== 'zen') return ['--cookies-from-browser', browser];
+  if (!browser || browser === 'none') return [];
+  if (browser !== 'zen' && browser !== 'auto') return ['--cookies-from-browser', browser];
 
   const zenRoots = [
     join(configHome, 'zen'),

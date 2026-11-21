@@ -250,7 +250,7 @@ $env:YT_DLP_COOKIES = 'firefox'
 mise exec -- bun start
 ```
 
-The CLI's automatic Zen/Firefox profile search currently checks Linux-style
+The opt-in `YT_DLP_COOKIES=auto` Zen/Firefox profile search checks Linux-style
 locations. On Windows, use an explicit browser setting. To use a particular Zen
 profile, read its directory from `about:profiles` in Zen and pass it through
 yt-dlp's Firefox cookie reader:
@@ -263,7 +263,7 @@ mise exec -- bun start
 Replace the entire example path with your real profile directory. Cookies from
 Chrome/Edge may be inaccessible because of Windows browser encryption or locked
 databases; selecting another browser is often necessary. Clear the override to return
-to the CLI's default behavior:
+to the CLI's default behavior (no browser-cookie discovery):
 
 ```powershell
 Remove-Item Env:YT_DLP_COOKIES -ErrorAction SilentlyContinue

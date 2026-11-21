@@ -126,20 +126,23 @@ requires a working connection.
 
 ### Browser cookies
 
-yt-down automatically uses an existing Zen cookie database (including Arch's
-`~/.config/zen`, legacy `~/.zen`, and Flatpak profiles), then falls back to
-Firefox. If neither is available, it runs without browser cookies. Zen profiles
-are read using yt-dlp's Firefox cookie reader; the most recently used cookie
-database is selected. Open Zen and visit YouTube first if you need to sign in.
-
-Override cookie selection when needed:
+Browser-cookie access is **off by default**. For sites that need your signed-in
+session, explicitly select a browser or opt into discovery. Cookie-enabled
+requests can act as your browser account on the requested site; never share
+cookie exports in issues or pull requests.
 
 ```bash
+YT_DLP_COOKIES=auto yt-down  # Discover Zen, then Firefox
 YT_DLP_COOKIES=zen yt-down
 YT_DLP_COOKIES=chrome yt-down
 YT_DLP_COOKIES="firefox:/path/to/zen/profile" yt-down
 YT_DLP_COOKIES=none yt-down
 ```
+
+`auto` checks Zen's standard, Arch, and Flatpak locations before Firefox and
+chooses the most recently used database within each browser. The extension
+inherits explicit `YT_DLP_COOKIES` settings from the desktop session. User yt-dlp
+configuration may independently enable cookies. See [SECURITY.md](SECURITY.md).
 
 ## Global Install
 
@@ -192,7 +195,9 @@ live YouTube download using cached metadata.
 
 ## License
 
-MIT
+[MIT](LICENSE). The license and copyright notice are included in the extension
+package. MIT permits redistribution under GPL-compatible terms required for
+GNOME Shell extensions; third-party components retain their own notices.
 
 ## GNOME Shell extension (TypeScript)
 
@@ -200,9 +205,14 @@ The panel extension lives in `extension/` and supports GNOME Shell **45+**
 (currently declared versions: **45–51**; runtime tested on **51**). It adapts to
 the older GNOME 45–47 widget APIs. Future GNOME releases require compatibility
 checks and an explicit metadata update before they can be enabled. Paste
-a video link to fetch formats automatically, or open the popup with a link in
-your clipboard. Clipboard detection runs only when the popup opens and can be
-turned off in Settings. By default, choose a format to start a download. Enable **Download automatically after pasting** in Settings to start as soon as a valid link is pasted, without Enter or a quality click. Automatic downloads use your last quality or MP3 preset when available, otherwise best available video quality. Clipboard detection when opening the popup only fetches formats, even with this option enabled.
+a video link to fetch formats automatically. Optional clipboard detection is
+**off by default** and can be enabled in Settings. Opening the popup then reads
+a supported link into the field locally; press Enter or Find video before the
+site is contacted. Clipboard detection never starts downloads automatically.
+By default, choose a format to start a download. Enable **Download automatically
+after pasting** in Settings to start as soon as a valid link is pasted, without
+Enter or a quality click. Automatic downloads use your last quality or MP3
+preset when available, otherwise best available video quality.
 
 The main list keeps **1080p**, **720p**, and **Audio · MP3** visible when available.
 When neither 1080p nor 720p exists (for example, a video offers 1634p and 1090p),
@@ -354,3 +364,11 @@ disclosure limits the initial choices (Hick's Law), generous full-width targets
 reduce pointing effort (Fitts's Law), immediate loading feedback acknowledges
 input (Doherty Threshold), and completion actions make the saved result useful
 (Peak-End Rule). These improve feedback without claiming faster network access.
+
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and PR expectations,
+[SECURITY.md](SECURITY.md) for private vulnerability reports, and
+[docs/maintaining.md](docs/maintaining.md) for repository protections, release
+procedures, and the remaining GNOME publication requirements.

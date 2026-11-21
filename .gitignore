@@ -1,5 +1,4 @@
 node_modules/
-bun.lock
 .DS_Store
 /bin/yt-down-bin
 /benchmark-results*.json
@@ -7,3 +6,12 @@ bun.lock
 /dist/
 
 /bin/yt-down.exe
+
+# Local credentials and browser exports must never be committed.
+.env
+.env.*
+!.env.example
+cookies.txt
+cookies.sqlite*
+*.pem
+*.key

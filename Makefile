@@ -140,5 +140,5 @@ dev:
 # ─── Clean ────────────────────────────────────────────────────────────────────
 clean:
 	@echo "$(CYAN)▶ Cleaning...$(RESET)"
-	@rm -rf node_modules bun.lock
+	@rm -rf node_modules
 	@echo "$(GREEN)  ✓ Cleaned$(RESET)"

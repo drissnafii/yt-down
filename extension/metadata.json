@@ -1,7 +1,7 @@
 {
   "uuid": "yt-down@drissnafii",
   "name": "yt-down",
-  "description": "Download videos and audio from sites supported by yt-dlp from the panel using the yt-down backend.",
+  "description": "Download videos and audio from sites supported by yt-dlp from the panel. Requires Bun, yt-dlp and ffmpeg. Optional clipboard access (off by default) fills the link field when the popup opens; press Enter or Find video to contact the site.",
   "shell-version": [
     "45",
     "46",
