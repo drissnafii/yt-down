@@ -13,6 +13,9 @@ root = pathlib.Path(os.environ['YT_DOWN_TEST_DIR'])
 with (root / 'calls.jsonl').open('a') as log:
     log.write(json.dumps(args) + '\n')
 if '-j' in args:
+    if os.environ.get('YT_DOWN_TEST_HANG_METADATA'):
+        (root / 'metadata.pid').write_text(str(os.getpid()))
+        time.sleep(60)
     if os.environ.get('YT_DOWN_TEST_METADATA_FAIL'):
         print('ERROR: Unsupported URL', file=sys.stderr)
         sys.exit(1)

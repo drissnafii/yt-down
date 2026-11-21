@@ -1,5 +1,5 @@
 import { formatBytes, getCodecLabel, getAudioCodecLabel } from './utils.js';
-import type { BackendEvent } from './protocol.js';
+import type { DownloadChoice } from './protocol.js';
 
 export interface YtDlpFormat {
   format_id: string;
@@ -201,15 +201,14 @@ function getResolutionLabel(height: number): string {
   return labels[height] ?? `${height}p`;
 }
 
-export function formatChoices(info: VideoInfo): Extract<BackendEvent, { type: 'formats' }> {
+export function formatChoices(info: VideoInfo): DownloadChoice[] {
   const videos = parseVideoFormats(info);
   const audio = parseAudioFormats(info);
-  return { type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration, thumbnail: info.thumbnail,
-    choices: [
+  return [
       ...(hasVideoFormats(info) ? [{ id: 'best', mode: 'video' as const, label: 'Best quality', sizeLabel: 'Auto' }] : []),
       ...videos.map(f => ({ id: f.formatId, mode: 'video' as const, label: f.resolution, height: f.height, fps: f.fps,
         sizeLabel: f.filesizeLabel, variant: f.variant })),
       ...((info.formats ?? []).some(f => f.acodec && f.acodec !== 'none') ? [{ id: 'best', mode: 'mp3' as const, label: 'Audio only', sizeLabel: 'MP3' }] : []),
       ...audio.map(f => ({ id: f.formatId, mode: 'audio' as const, label: `Audio · ${f.codec}`, sizeLabel: f.filesizeLabel })),
-    ] };
+  ];
 }

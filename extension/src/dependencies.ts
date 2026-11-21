@@ -1,4 +1,5 @@
 import GLib from 'gi://GLib';
+import type { DownloadChoice } from '../../src/protocol.js';
 
 export function findTool(name: string, override?: string | null): string | null {
   if (override) {
@@ -13,9 +14,9 @@ export function findTool(name: string, override?: string | null): string | null 
   return null;
 }
 
-export function missingDependencies(): string[] {
-  return ['gjs', 'yt-dlp', 'ffmpeg', 'setsid', 'kill']
-    .filter(name => !findTool(name, name === 'yt-dlp' ? GLib.getenv('YT_DLP_BIN') : null));
+export function missingDependencies(find = findTool): string[] {
+  return ['gjs', 'yt-dlp', 'setsid', 'kill']
+    .filter(name => !find(name, name === 'yt-dlp' ? GLib.getenv('YT_DLP_BIN') : null));
 }
 
 export function setupMessage(): string {
@@ -28,4 +29,11 @@ export function workerCommand(path: string, ...args: string[]): string[] {
   if (message) throw new Error(message);
   // A separate session lets cancellation reach yt-dlp, ffmpeg, and aria2 children.
   return [findTool('setsid')!, findTool('gjs')!, '-m', `${path}/worker.js`, ...args];
+}
+
+/** ffmpeg is needed for conversion and separately selected audio/video streams. */
+export function downloadRequirement(choice: DownloadChoice, find = findTool): string {
+  if (!find('ffmpeg') && (choice.mode === 'mp3' || choice.id.includes('+')))
+    return 'This format needs ffmpeg for conversion or merging. Install it, or choose an original single-stream format.';
+  return '';
 }

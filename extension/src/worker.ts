@@ -9,17 +9,14 @@ import { getVideoInfo, download, type DownloadRequest } from './download-control
 import { cancelled, emit, readLine } from './ytdlp-adapter.js';
 
 const loop = new GLib.MainLoop(null, false);
-// The standalone worker also runs in CI with an older GJS/GLib than Shell 51.
-type SignalAdd = (priority: number, signal: number, callback: () => boolean) => number;
-let signalAdd: SignalAdd;
-try {
-  signalAdd = (imports.gi as unknown as { GLibUnix: { signal_add: SignalAdd } }).GLibUnix.signal_add;
-  if (typeof signalAdd !== 'function') throw new Error('Legacy Unix signal API');
-}
-catch { signalAdd = (GLib as unknown as { unix_signal_add: SignalAdd }).unix_signal_add; }
-const signals = [2, 15].map(signal => signalAdd(GLib.PRIORITY_DEFAULT, signal, () => {
-  cancelled.cancel(); return GLib.SOURCE_CONTINUE;
-}));
+// Use the native source API across GJS versions, without deprecated aliases or
+// version-dependent signal_add overrides. The source IDs are removed below.
+const Unix = (imports.gi as unknown as { GLibUnix: { signal_source_new(signal: number): GLib.Source } }).GLibUnix;
+const signals = [2, 15].map(signal => {
+  const source = Unix.signal_source_new(signal);
+  source.set_callback(() => { cancelled.cancel(); return GLib.SOURCE_CONTINUE; });
+  return source.attach(null);
+});
 
 async function main(): Promise<void> {
   try {
@@ -34,7 +31,8 @@ async function main(): Promise<void> {
     emit({ type: 'status', message: 'Fetching video details…' });
     const info = await getVideoInfo(url);
     const fetched = GLib.get_monotonic_time();
-    emit(formatChoices(info));
+    emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration,
+      thumbnail: info.thumbnail, choices: formatChoices(info) });
     const stdin = new Gio.DataInputStream({ base_stream: new GioUnix.InputStream({ fd: 0, close_fd: false }) });
     try {
       const line = await readLine(stdin, cancelled);

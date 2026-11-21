@@ -170,3 +170,90 @@ test.skipIf(!available)('GJS client force-stops an unresponsive process group an
     expect(existsSync(snapshot.path)).toBe(false);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }, 10000);
+
+test.skipIf(!available).each(['startup', 'metadata', 'active', 'retry', 'unresponsive'])('destroy during %s clears timers, suppresses callbacks and reaps the worker', async phase => {
+  const dir = await mkdtemp(join(tmpdir(), 'yt-down-destroy-'));
+  try {
+    const driver = join(dir, 'driver.js');
+    await Bun.write(driver, `
+      import GLib from 'gi://GLib';
+      import { Backend } from ${JSON.stringify(resolve(import.meta.dir, '../extension/src/client.ts'))};
+      const loop = new GLib.MainLoop(null, false);
+      const backend = new Backend();
+      const phase = ${JSON.stringify(phase)};
+      let stopping = false;
+      let snapshot = '';
+      const stop = () => {
+        if (stopping) return;
+        stopping=true; snapshot=backend.cacheDirectory;
+        if (phase === 'unresponsive') backend.cancel();
+        backend.destroy();
+        if (backend.killTimer !== 0) print('TIMER');
+        let attempts=0;
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT,20,()=>{
+          if (!backend.process && (!snapshot || !GLib.file_test(snapshot,GLib.FileTest.EXISTS))) {
+            print('CLEAN'); loop.quit(); return GLib.SOURCE_REMOVE;
+          }
+          if (++attempts > 200) { print('LEAK'); loop.quit(); return GLib.SOURCE_REMOVE; }
+          return GLib.SOURCE_CONTINUE;
+        });
+      };
+      const onEnd = () => { print('UNEXPECTED END'); loop.quit(); };
+      const onEvent = event => {
+        if (stopping) { print('LATE CALLBACK'); return; }
+        if (event.type === 'formats') backend.download({url:'https://www.youtube.com/watch?v=fixture',mode:'video',id:'video',directory:${JSON.stringify(join(dir, 'output'))}},onEvent,onEnd);
+        if (phase === 'retry' && event.type === 'status' && event.message.includes('Retrying')) stop();
+        if (['active','unresponsive'].includes(phase) && event.type === 'progress') stop();
+        if (event.type === 'error') { print('ERROR:'+event.message); loop.quit(); }
+      };
+      backend.start(['setsid','gjs','-m',${JSON.stringify(join(build, 'worker.js'))},'formats','https://youtu.be/fixture'],onEvent,onEnd);
+      if (phase === 'startup') stop();
+      if (phase === 'metadata') GLib.timeout_add(GLib.PRIORITY_DEFAULT,20,()=>{
+        if (GLib.file_test(${JSON.stringify(join(dir, 'metadata.pid'))},GLib.FileTest.EXISTS)) { stop(); return GLib.SOURCE_REMOVE; }
+        return GLib.SOURCE_CONTINUE;
+      });
+      loop.run();
+    `);
+    const result = await Bun.build({ entrypoints: [driver], outdir: join(dir, 'compiled'), target: 'browser', external: ['gi://*'] });
+    expect(result.success).toBe(true);
+    const proc = Bun.spawn(['gjs', '-m', join(dir, 'compiled/driver.js')], { stdout: 'pipe', stderr: 'pipe', env: {
+      ...process.env, YT_DLP_BIN: join(import.meta.dir, 'fixtures/fake-ytdlp.py'), YT_DLP_COOKIES: 'none',
+      YT_DOWN_TEST_DIR: dir, YT_DOWN_TEST_HANG: '1', YT_DOWN_DOWNLOADER: 'native',
+      ...(phase === 'metadata' ? { YT_DOWN_TEST_HANG_METADATA: '1' } : {}),
+      ...(phase === 'retry' ? { YT_DOWN_TEST_FAILURES: '1' } : {}),
+      ...(phase === 'unresponsive' ? { YT_DOWN_TEST_IGNORE_SIGNALS: '1' } : {}),
+    } });
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+    expect(code).toBe(0); expect(stderr).toBe(''); expect(stdout.trim()).toBe('CLEAN');
+    if (await Bun.file(join(dir, 'snapshot.json')).exists()) {
+      const snapshot = await Bun.file(join(dir, 'snapshot.json')).json(); expect(existsSync(snapshot.path)).toBe(false);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+}, 10000);
+
+test.skipIf(!available)('missing ffmpeg leaves core tools and original single-stream downloads available', async () => {
+  const source = join(build, 'requirements-source.js');
+  await Bun.write(source, `
+    import { missingDependencies, downloadRequirement } from ${JSON.stringify(resolve(import.meta.dir, '../extension/src/dependencies.ts'))};
+    const find = name => name === 'ffmpeg' ? null : '/usr/bin/' + name;
+    print(JSON.stringify({
+      missing: missingDependencies(find),
+      original: downloadRequirement({id:'audio',mode:'audio'},find),
+      video: downloadRequirement({id:'combined',mode:'video'},find),
+      mp3: downloadRequirement({id:'audio',mode:'mp3'},find),
+      merged: downloadRequirement({id:'video+audio',mode:'video'},find),
+      noTools: missingDependencies(() => null),
+    }));
+  `);
+  const result = await Bun.build({ entrypoints: [source], outdir: build, naming: 'requirements.js', target: 'browser', external: ['gi://*'] });
+  expect(result.success).toBe(true);
+  const proc = Bun.spawn(['gjs', '-m', join(build, 'requirements.js')], { stdout: 'pipe', stderr: 'pipe' });
+  const data = await new Response(proc.stdout).json() as {
+    missing: string[]; original: string; video: string; mp3: string; merged: string; noTools: string[];
+  };
+  expect(await proc.exited).toBe(0);
+  expect(data.missing).toEqual([]);
+  expect(data.original).toBe(''); expect(data.video).toBe('');
+  expect(data.mp3).toContain('ffmpeg'); expect(data.merged).toContain('ffmpeg');
+  expect(data.noTools).toContain('yt-dlp'); expect(data.noTools).not.toContain('ffmpeg');
+});

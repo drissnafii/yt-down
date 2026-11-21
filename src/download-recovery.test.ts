@@ -71,6 +71,14 @@ test('re-extracts after a rejected URL and resumes', async () => {
   expect(attempts()).toHaveLength(2);
 });
 
+test('resumes the truncated-transfer error reported by the pinned yt-dlp release', async () => {
+  await runDownload(fixture(['ERROR: [download] Got error: Downloaded 32768 bytes, expected 262144 bytes']), {
+    retryDelaysMs: [1], onRetry: () => {},
+  });
+  expect(attempts()).toHaveLength(2);
+  expect(readFileSync(join(dir, 'video.mp4.part'), 'utf8')).toBe('saved-resumed');
+});
+
 test('uses cached metadata only once and refreshes from the original URL after failure', async () => {
   const original = fixture(['ERROR: unable to download video data: HTTP Error 403: Forbidden']);
   const initial = [...original.slice(0, -1), '--load-info-json', '/private/video.info.json'];

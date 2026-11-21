@@ -34,7 +34,7 @@ Account passkeys/2FA and recovery codes must be configured by the account owner.
 3. From a clean checkout of that commit, use `mise install` and
    `mise exec -- bun install --frozen-lockfile --ignore-scripts`.
 4. Run tests, typecheck, extension build, and the isolated GNOME smoke test.
-   The hosted CI does not run the GNOME smoke test. Integration tests skip if
+   The hosted GNOME 51 UI job runs the smoke test against the packed ZIP. Integration tests skip if
    yt-dlp or ffmpeg are absent; check the reported skips and run them locally.
 5. Run `mise exec -- bun run extension:pack`. Inspect the ZIP for accidental
    credentials, browser data, executables, and unnecessary files. Confirm
@@ -78,7 +78,10 @@ The workflow runs tests, CLI typecheck, and extension compilation (including
 the GNOME typecheck). It installs Bun through the checked-in mise config and
 uses the committed lockfile. Package lifecycle scripts and shared CI caches
 are disabled. CI installs GJS, Python, yt-dlp and ffmpeg to exercise the worker
-and local media integration tests. The GNOME Shell UI smoke test runs locally.
+and local media integration tests. A separate Fedora 45 container job verifies GNOME 51 and runs the full UI smoke
+test against the ZIP as a non-root user, with isolated D-Bus and memory-backed
+settings. The official container index is pinned by digest; verify its source
+and Shell version when updating it. The same smoke test runs locally.
 The yt-dlp test executable is pinned to an official release and verified against
 a checked-in SHA-256 digest; update the release and digest together after
 checking the upstream release checksums. Older distro yt-dlp packages may lack
@@ -93,3 +96,19 @@ merge around it. Never automatically run untrusted code on a personal runner.
 The [listing kit](gnome-listing.md) contains prepared screenshots, icon and copy.
 The catalog controls the numeric `version`; metadata uses `version-name` for the
 human-facing version and declares the Gumroad support URL through `donations`.
+
+
+The extension entry point delegates to `Application`, `PopupView`,
+`DownloadManager`, and `DownloadView`. Keep ownership explicit: the manager
+owns focus/settings signals and worker sessions, each view owns its actors and
+queries, and the application owns input debounce and discovery. User cancellation
+allows a three-second grace period; module destruction clears that timer and
+kills the worker group immediately, including the setsid startup race. Tests
+verify destruction during startup, metadata, active transfer, retry delay and
+unresponsive children, plus actual disable/re-enable behavior in Shell 51.
+
+ffmpeg is a feature dependency, not a prerequisite for metadata discovery or
+original single-stream downloads. Conversion and separately selected video/audio
+require it. The shared format model returns choices; adapters construct protocol
+events. Unknown download failures remain permanent, while both supported
+truncated-transfer error formats are classified as interrupted connections.

@@ -36,3 +36,9 @@ or discarded. A download snapshot is written to a private temporary directory
 with mode 0600 and removed on completion/cancellation. The parent also cleans it
 after a forced worker stop. A sudden power loss can leave private temporary data;
 no metadata is added to the extension package or Git repository.
+
+User cancellation has a three-second forced-stop fallback. Disabling/unloading
+clears that timer, drops event/UI callbacks and immediately kills the process
+group and its root process. Asynchronous completion only reaps children and
+removes private snapshots. Views cancel size queries and animations; the manager
+disconnects stage/settings signals, and the application removes input debounce.

@@ -29,7 +29,8 @@ export async function runJsonCommand(args: string[]): Promise<void> {
     const info = await getVideoInfo(url, controller.signal);
     if (controller.signal.aborted) throw new DownloadCancelledError();
     if (command === 'formats') {
-      emit(formatChoices(info));
+      emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration,
+      thumbnail: info.thumbnail, choices: formatChoices(info) });
       return;
     }
     const directory = getOutputDirectory({ directory: output, url });

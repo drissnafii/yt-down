@@ -23,6 +23,9 @@ export async function download(request: DownloadRequest, info?: VideoInfo): Prom
   if (!url || !['video', 'audio', 'mp3'].includes(request.mode)
     || !/^(?:best|\w[\w.-]*(?:\+\w[\w.-]*)*)$/.test(request.id)
     || !GLib.path_is_absolute(request.directory)) throw new Error('Invalid download request.');
+  const ffmpeg = findTool('ffmpeg');
+  if (!ffmpeg && (request.mode === 'mp3' || request.id.includes('+')))
+    throw new Error('This format needs ffmpeg for conversion or merging. Choose an original single-stream format or install ffmpeg.');
   const directory = normalizeYouTubeUrl(url) ? request.directory : GLib.build_filenamev([request.directory, 'other_sites']);
   try { Gio.File.new_for_path(directory).make_directory_with_parents(null); }
   catch (error) { if (!(error instanceof GLib.Error) || !error.matches(Gio.io_error_quark(), Gio.IOErrorEnum.EXISTS)) throw error; }
@@ -30,7 +33,7 @@ export async function download(request: DownloadRequest, info?: VideoInfo): Prom
     downloader: GLib.getenv('YT_DOWN_DOWNLOADER') ?? 'native', findExecutable: findTool,
     warn: message => emit({ type: 'status', message }) });
   if (transfer.includes('http:aria2c')) transfer.push('--paths', `temp:${directory}/.aria2`);
-  const selected = request.id === 'best' ? (request.mode === 'video' ? 'bestvideo+bestaudio/best' : 'bestaudio/best') : request.id;
+  const selected = request.id === 'best' ? (request.mode === 'video' ? (ffmpeg ? 'bestvideo+bestaudio/best' : 'best') : 'bestaudio/best') : request.id;
   const args = [...baseArgs(), ...transfer, ...RECOVERY_ARGS, '-f', selected, '--paths', directory,
     '-o', '%(title)s [%(id)s].%(ext)s', '--newline', '--progress', '--progress-delta', '0.3',
     '--progress-template', 'download:yt-down-progress:%(progress)j', '--print', 'after_move:yt-down-file:%(filepath)j',

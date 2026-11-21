@@ -20,7 +20,7 @@ export function classifyFailure(stderr: string): Failure {
   if (/permission denied|no space left|disk quota|read-only file system|postprocessing|ffmpeg|private video|video unavailable|sign in|not available|unsupported url|requested format.*not available|certificate verify failed/i.test(message)) {
     return 'permanent';
   }
-  if (/failed to resolve|name or service not known|temporary failure in name resolution|nodename nor servname|timed? out|timeout|connection (?:reset|refused|aborted)|network is (?:unreachable|down)|no route to host|remote (?:end closed|disconnected)|incomplete read|incompleteread|bytes read, .*more expected|did not get any data blocks/i.test(message)) {
+  if (/failed to resolve|name or service not known|temporary failure in name resolution|nodename nor servname|timed? out|timeout|connection (?:reset|refused|aborted)|network is (?:unreachable|down)|no route to host|remote (?:end closed|disconnected)|incomplete read|incompleteread|bytes read, .*more expected|downloaded \d+ bytes, expected \d+ bytes|did not get any data blocks/i.test(message)) {
     return 'connection';
   }
   if (/HTTP Error (?:429|5\d\d)\b/i.test(message)) return 'server';

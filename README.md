@@ -257,7 +257,13 @@ after completion or cancellation. Snapshots older than five minutes are skipped;
 rejected signed URLs trigger a fresh extraction with saved progress. Native
 fragment concurrency, optional aria2, resume behavior, and bounded URL refreshes
 are retained. Cancellation signals the process group, including ffmpeg/aria2,
-with a forced stop after three seconds if needed.
+with a forced stop after three seconds if needed. Disabling the extension
+immediately stops workers and removes outstanding cancellation timers.
+
+The extension entry point owns only enable/disable. `application.ts` coordinates
+input and discovery, `popup-view.ts` owns popup/panel presentation,
+`download-view.ts` owns job cards, and `download-manager.ts` owns the queue and
+workers. Each module destroys its own actors, subscriptions, queries or workers.
 
 Format selection, progress parsing, transfer options and failure classification
 are shared with the Bun CLI as pure TypeScript modules. Removing Bun from the
@@ -271,8 +277,10 @@ users can install it from the GNOME catalog or Extension Manager and see its
 panel icon. The extension ZIP cannot install system downloader tools for them.
 This is **not a zero-setup downloader**.
 
-Install **yt-dlp**, **ffmpeg**, and **GJS** from your distribution's software
-manager. Standard Linux process tools `setsid` and `kill` must also be available
+Install **yt-dlp** and **GJS** from your distribution's software manager. Add
+**ffmpeg** for MP3 conversion and audio/video merging. Original single-stream
+formats remain available without ffmpeg; automatic best video then chooses a
+combined stream. Standard Linux process tools `setsid` and `kill` must also be available
 (normally supplied by util-linux/procps). The popup detects missing tools and
 shows an error inside the input; Settings explains setup and links to this guide.
 No tools are silently downloaded or installed.
@@ -341,8 +349,12 @@ The automated `extension:smoke` check runs a separate headless GNOME Shell with
 memory-backed settings, the real GJS worker, and a fake yt-dlp executable. It exercises loading, presets,
 progress, completion, reduced motion, and cleanup, and verifies that your desktop's
 enabled-extension list stayed unchanged. It requires a working local GNOME Shell
-and a built extension. It does not contact websites or use browser cookies. Worker integration tests also
-cover metadata reuse, retries, permanent failures and process-tree cancellation.
+and a built extension. Pass `--package` to load the generated ZIP instead of
+the build directory. It does not contact websites or use browser cookies. Worker integration tests also
+cover metadata reuse, retries, permanent failures, process-tree cancellation, and
+destruction during startup, metadata extraction, downloading and retry delay.
+Hosted CI includes a separate Fedora 45 container job that verifies Shell 51 and
+loads the actual ZIP in an isolated headless session.
 
 For a graphical test on GNOME 51, use
 `GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --devkit`.

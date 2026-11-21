@@ -19,7 +19,8 @@ Optional clipboard access is disabled by default. When enabled, opening the
 popup only fills the link field locally. Press Enter or Find video before the
 site is contacted. Directly pasting a link fetches metadata automatically.
 
-Requires GNOME 51, yt-dlp, ffmpeg, GJS and standard Linux process tools. Deno
+Requires GNOME 51, yt-dlp, GJS and standard Linux process tools. Add ffmpeg for
+MP3 conversion and merging; original single-stream downloads work without it. Deno
 2.3.0+ and the matching yt-dlp EJS scripts are recommended for YouTube. Install
 these prerequisites through your distribution's software manager. Bun is not
 required. This extension does not automatically install external tools.

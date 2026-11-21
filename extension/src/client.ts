@@ -90,7 +90,9 @@ export class Backend {
     const pid = this.process?.get_identifier();
     if (!pid || !/^\d+$/.test(pid)) return;
     // No shell interpolation. The session contains the worker and every media child.
-    const kill = Gio.Subprocess.new([findTool('kill')!, `-${signal}`, '--', `-${pid}`], Gio.SubprocessFlags.NONE);
+    // The group may not exist yet if unload races setsid startup. Direct force_exit
+    // below covers that case; suppress only the kill helper's expected ESRCH text.
+    const kill = Gio.Subprocess.new([findTool('kill')!, `-${signal}`, '--', `-${pid}`], Gio.SubprocessFlags.STDERR_SILENCE);
     kill.wait_async(null, (_process, result) => { try { kill.wait_finish(result); } catch { /* Already exited. */ } });
   }
 
@@ -113,13 +115,20 @@ export class Backend {
     this.cancelled = true;
     this.signalGroup('INT');
     if (this.process) this.killTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, () => {
-      this.killTimer = 0; this.signalGroup('KILL'); return GLib.SOURCE_REMOVE;
+      this.killTimer = 0; this.signalGroup('KILL'); this.process?.force_exit(); return GLib.SOURCE_REMOVE;
     });
   }
 
   destroy(): void {
+    if (this.disposed) return;
     this.disposed = true;
-    this.cancel();
+    this.onEvent = () => {};
+    this.onEnd = () => {};
+    if (this.killTimer) { GLib.Source.remove(this.killTimer); this.killTimer = 0; }
+    // Unloading cannot leave a delayed timer retaining UI callbacks. User cancel
+    // remains graceful; destruction immediately terminates the entire group.
+    this.signalGroup('KILL');
+    this.process?.force_exit();
     this.cancellable.cancel();
   }
 }

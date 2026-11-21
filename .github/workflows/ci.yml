@@ -53,5 +53,37 @@ jobs:
       - name: Build extension (includes GNOME typecheck)
         run: bun run extension:build
 
-# GNOME smoke tests run separately in an isolated desktop session; this job
-# does not claim coverage of GNOME versions unavailable on this runner.
+  gnome-51:
+    name: GNOME 51 UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Fedora 45 provides Shell 51; pin the official container index by digest.
+    container:
+      image: registry.fedoraproject.org/fedora@sha256:7b6d9048825950573e58b7185631f6bd38f7c24f5c0e68ae902870aedebb86e0
+    steps:
+      - name: Install GNOME test environment
+        run: |
+          dnf install -y git unzip zip tar gzip xz libstdc++ gnome-shell gjs gtk4 libadwaita \
+            dbus-daemon dbus-tools mesa-dri-drivers mesa-libEGL mesa-libGL \
+            xorg-x11-server-Xwayland python3 shadow-utils dejavu-sans-fonts util-linux procps-ng
+          gnome-shell --version
+          useradd --create-home --uid 1000 yt-down-ci
+          install -d -m 700 -o 1000 -g 1000 /tmp/yt-down-runtime
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          cache: false
+          mise_dir: /opt/mise
+      - name: Build the actual extension package
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun run extension:pack
+      - name: Load and exercise the package in GNOME 51
+        run: |
+          chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          YT_DOWN_CI_BUN="$(mise which bun)"
+          runuser -u yt-down-ci -- env XDG_RUNTIME_DIR=/tmp/yt-down-runtime \
+            GSETTINGS_BACKEND=memory LIBGL_ALWAYS_SOFTWARE=1 XDG_SESSION_TYPE=wayland \
+            "$YT_DOWN_CI_BUN" run extension:smoke --package
