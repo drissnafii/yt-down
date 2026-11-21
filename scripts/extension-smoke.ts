@@ -44,6 +44,7 @@ if (process.argv[2] !== '--session') {
           global.settings.set_string('welcome-dialog-last-shown-version', Config.PACKAGE_VERSION);
           global.context.unsafe_mode = true;
           globalThis.__hideOverview = () => Main.overview.hide();
+          globalThis.__overviewHidden = () => !Main.overview.visible && !Main.overview.animationInProgress;
           globalThis.__clearNotifications = () => Main.messageTray.getSources().forEach(source => source.destroy());
           globalThis.__mediaRaises = 0;
           globalThis.__mediaLaunches = 0;
@@ -153,13 +154,28 @@ else:
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown)'), value => value.includes("'true'"), 'helper initialized');
     await waitFor(() => evaluate('globalThis.__shellReady()'), value => value.includes("'true'"), 'shell startup complete');
     await evaluate("globalThis.__hideOverview(); 'OK'");
+    await waitFor(() => evaluate('globalThis.__overviewHidden()'), value => value.includes("'true'"), 'overview hide animation finished');
+    await evaluate("globalThis.__clearNotifications(); 'OK'");
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.view.entry)'), value => value.includes("'true'"), 'extension initialized');
     await check("!e.settings.get_boolean('clipboard-autofetch')", 'clipboard access is opt-in');
-    await evaluate("(() => { const e=globalThis.__getYtDown(); e.view.button.menu.open(); e.setEntry('invalid'); e.fetchFormats(); return 'OK'; })()");
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.view.button.menu.open(); e.view.entry.grab_key_focus(); e.setEntry('invalid'); e.fetchFormats(); return 'OK'; })()");
     await check("e.view.inputError.visible && e.view.inputError.get_parent() === e.view.urlField && !e.view.statusRow.visible && e.view.entry.get_text() === 'invalid'", 'validation stays inside input and preserves text');
-    await evaluate("globalThis.__getYtDown().view.entry.set_text('correction'); 'OK'");
-    await check("!e.view.inputError.visible && e.view.entry.opacity === 255 && !e.view.statusRow.visible", 'editing dismisses inline error without an idle helper row');
+    await delay(300);
+    await check("(() => { const menu=e.view.button.menu; const [mx,my]=menu.actor.get_transformed_position(); const [bx,by]=e.view.button.get_transformed_position(); const center=bx+e.view.button.width/2; const expected=Math.max(0,Math.min(1280-menu.actor.width,center-menu.actor.width/2)); return Math.abs(mx-expected)<24 && my>=by+e.view.button.height; })()", 'popup is centered below its panel icon within screen bounds');
+    // Click the entry padding, outside ClutterText. Programmatic set_text()
+    // alone misses regressions where only the text actor handles presses.
+    await evaluate(`(() => {
+      const v=globalThis.__getYtDown().view;
+      const [x,y]=v.entry.get_transformed_position();
+      const target=global.stage.get_actor_at_pos(imports.gi.Clutter.PickMode.REACTIVE,x+2,y+2);
+      if (target!==v.entry && target!==v.urlField) throw new Error('Input padding is not clickable: '+target);
+      target.emit('button-press-event',null);
+      return 'OK';
+    })()`);
+    await check("!e.view.inputError.visible && e.view.entry.clutter_text.has_key_focus() && e.view.entry.get_text() === 'invalid'", 'clicking input padding dismisses error, focuses entry and preserves URL');
+    await evaluate("globalThis.__getYtDown().view.entry.clutter_text.insert_text('x',-1); 'OK'");
+    await check("e.view.entry.get_text().includes('x') && !e.view.inputError.visible && e.view.entry.opacity === 255 && !e.view.statusRow.visible", 'focused text remains editable after error dismissal');
     await evaluate("globalThis.__downloader=imports.gi.GLib.getenv('YT_DLP_BIN'); imports.gi.GLib.setenv('YT_DLP_BIN','/missing/yt-dlp',true); globalThis.__getYtDown().setEntry('https://youtu.be/test'); globalThis.__getYtDown().fetchFormats(); 'OK'");
     await check("e.view.phase === 'error' && e.view.inputError.text.includes('Setup needed') && !e.backend", 'missing dependency uses the input with setup guidance');
     await evaluate("imports.gi.GLib.setenv('YT_DLP_BIN',globalThis.__downloader,true); 'OK'");
