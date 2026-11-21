@@ -283,7 +283,8 @@ transfers. Bun remains the CLI runtime and development/build tool.
 
 ### Install the extension
 
-The extension has not yet been submitted to GNOME Extensions. Once approved,
+Version 0.1.0 has been [submitted to GNOME Extensions](https://extensions.gnome.org/review/78814/)
+and is awaiting review. Once approved,
 users can install it from the GNOME catalog or Extension Manager and see its
 panel icon. The extension ZIP cannot install system downloader tools for them.
 This is **not a zero-setup downloader**.
@@ -340,7 +341,9 @@ mise exec -- bun run extension:pack
 
 The build also requires `glib-compile-schemas` (GLib); packing requires `zip`.
 The ZIP contains readable `extension.js`, `prefs.js`, `worker.js`, metadata,
-stylesheet, schemas and the MIT license. It contains no Bun backend, runtime
+stylesheet, schema XML and the MIT license. The release ZIP excludes
+`gschemas.compiled`; GNOME compiles schemas during installation. Local build
+and install commands compile them for development. It contains no Bun backend, runtime
 binaries, node_modules, or media tools. Installation copies it into
 `$XDG_DATA_HOME/gnome-shell/extensions/yt-down@drissnafii` (normally under
 `~/.local/share`).

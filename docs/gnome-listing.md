@@ -1,6 +1,7 @@
 # GNOME Extensions listing kit
 
-This kit is ready for maintainer review; it has not been submitted or approved.
+Version 0.1.0 has been submitted and is awaiting human review. This kit contains
+listing assets and instructions for subsequent releases; approval is pending.
 
 ## Description
 
@@ -63,6 +64,9 @@ control how the donation link is displayed; it is not a payment flow in the popu
    `mise exec -- bun run extension:pack` and inspect its contents.
 4. Sign in or register at https://extensions.gnome.org/ and upload the ZIP at
    https://extensions.gnome.org/upload/. The numeric version is assigned there.
+   Check the [0.1.0 review](https://extensions.gnome.org/review/78814/) first;
+   respond to human comments before uploading if review has started. Version
+   0.1.1 keeps the same UUID and includes the [review notes](gnome-review.md).
 5. Explain that the readable GJS worker isolates metadata and process handling
    from Shell and calls user-installed yt-dlp/ffmpeg. No external binaries are
    bundled. Address reviewer feedback before advertising catalog availability.
