@@ -71,6 +71,11 @@ jobs:
             dbus-daemon dbus-tools mesa-dri-drivers mesa-libEGL mesa-libGL \
             xorg-x11-server-Xwayland python3 shadow-utils dejavu-sans-fonts util-linux procps-ng
           gnome-shell --version
+          # Shell's login/parental-control proxies need a system bus even in a
+          # headless container. This socket belongs only to this disposable job.
+          mkdir -p /run/dbus
+          dbus-uuidgen --ensure
+          dbus-daemon --system --fork --nopidfile
           useradd --create-home --uid 1000 yt-down-ci
           install -d -m 700 -o 1000 -g 1000 /tmp/yt-down-runtime
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

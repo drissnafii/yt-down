@@ -109,8 +109,12 @@ else:
   await mkdir(process.env.XDG_CONFIG_HOME!, { recursive: true });
   await mkdir(process.env.XDG_CACHE_HOME!, { recursive: true });
   const log = join(dir, 'shell.log');
+  const waylandDisplay = `yt-down-smoke-${process.pid}`;
+  // D-Bus activated GTK services must use the nested compositor, not the host
+  // display (or an unset display in the CI container).
+  await command(['dbus-update-activation-environment', `WAYLAND_DISPLAY=${waylandDisplay}`]);
   const shell = Bun.spawn(['gnome-shell', '--headless', '--virtual-monitor', '1280x900',
-    '--wayland-display', `yt-down-smoke-${process.pid}`], { stdout: Bun.file(log), stderr: Bun.file(log + '.stderr') });
+    '--wayland-display', waylandDisplay], { stdout: Bun.file(log), stderr: Bun.file(log + '.stderr') });
   const readLogs = async () => (await Bun.file(log).text()) + '\n' + (await Bun.file(log + '.stderr').text());
   const call = (method: string, ...args: string[]) => command(['gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
     '--object-path', '/org/gnome/Shell', '--method', method, ...args]);
