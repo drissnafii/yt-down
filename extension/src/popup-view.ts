@@ -41,7 +41,7 @@ export class PopupView {
   private disposed = false;
 
   constructor(private callbacks: Callbacks) {
-    this.button = new PanelMenu.Button(0.0, 'DownDev');
+    this.button = new PanelMenu.Button(0.5, 'DownDev');
     const menu = this.button.menu as PopupMenu.PopupMenu;
     menu.actor.add_style_class_name('yt-down-popup');
 
@@ -70,7 +70,7 @@ export class PopupView {
 
     const input = new St.BoxLayout({ style_class: 'yt-down-input' });
     this.urlField = new St.Widget({ layout_manager: new Clutter.BinLayout(), style_class: 'yt-down-url-field', x_expand: true,
-      min_width: 0, natural_width: 0, clip_to_allocation: true });
+      min_width: 0, natural_width: 0, clip_to_allocation: true, reactive: true });
     this.entry = new St.Entry({ min_width: 0, natural_width: 0, hint_text: 'Paste a video link…', can_focus: true, x_expand: true,
       accessible_name: 'Video URL', style_class: 'yt-down-entry' });
     this.entry.clutter_text.min_width = 0;
@@ -82,10 +82,15 @@ export class PopupView {
     this.inputError.visible = false;
     this.inputError.reactive = false;
     this.urlField.add_child(this.inputError);
-    this.entry.clutter_text.connect('button-press-event', () => {
+    // Handle the whole field, including entry padding and an empty text actor.
+    const editInput = () => {
       this.setInputError('');
+      this.entry.grab_key_focus();
       return Clutter.EVENT_PROPAGATE;
-    });
+    };
+    this.urlField.connect('button-press-event', editInput);
+    this.entry.connect('button-press-event', editInput);
+    this.entry.clutter_text.connect('button-press-event', editInput);
     this.entry.clutter_text.connect('key-focus-in', () => this.setInputError(''));
     input.add_child(this.urlField);
     this.searchButton = new St.Button({ can_focus: true, accessible_name: 'Find video',
