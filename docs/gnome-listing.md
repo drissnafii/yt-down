@@ -24,6 +24,9 @@ MP3 conversion and merging; original single-stream downloads work without it. De
 2.3.0+ and the matching yt-dlp EJS scripts are recommended for YouTube. Install
 these prerequisites through your distribution's software manager. Bun is not
 required. This extension does not automatically install external tools.
+Use a recent yt-dlp with `--js-runtimes` support (tested: 2026.10.26). If your
+distribution ships an older incompatible version, upgrade using yt-dlp's
+official installation guide before using the extension.
 
 Open source, MIT licensed.
 Source and issues: https://github.com/drissnafii/yt-down

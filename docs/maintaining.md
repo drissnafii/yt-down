@@ -82,6 +82,10 @@ and local media integration tests. A separate Fedora 45 container job verifies G
 test against the ZIP as a non-root user, with isolated D-Bus and memory-backed
 settings. The official container index is pinned by digest; verify its source
 and Shell version when updating it. The same smoke test runs locally.
+The disposable container starts its own system bus. An empty, package-created
+systemd seat directory is removed so GNOME uses its supported non-systemd login
+manager; the container has no real logind session. The Shell/extension code and
+UI assertions are not replaced or skipped.
 The yt-dlp test executable is pinned to an official release and verified against
 a checked-in SHA-256 digest; update the release and digest together after
 checking the upstream release checksums. Older distro yt-dlp packages may lack

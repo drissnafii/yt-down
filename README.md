@@ -285,6 +285,12 @@ combined stream. Standard Linux process tools `setsid` and `kill` must also be a
 shows an error inside the input; Settings explains setup and links to this guide.
 No tools are silently downloaded or installed.
 
+Use a recent yt-dlp release with `--js-runtimes` support; CI tests **2026.10.26**.
+Older distribution packages, such as 2025.04.30, do not accept that option and
+can fail discovery when an external JavaScript runtime is found. If your package
+is too old, upgrade using [yt-dlp's official installation instructions](https://github.com/yt-dlp/yt-dlp/wiki/Installation).
+Check that `yt-dlp --help` lists `--js-runtimes` after updating.
+
 For YouTube, install **Deno 2.3.0 or newer** and the matching yt-dlp EJS components
 as described in [yt-dlp's EJS setup guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
 Your distribution may package EJS separately; official yt-dlp executables bundle
