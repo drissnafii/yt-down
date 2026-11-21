@@ -243,8 +243,20 @@ export default class YtDownExtension extends Extension {
       if (!url || url === this.lastClipboard || (url === this.loadedUrl && this.phase !== 'idle')) return;
       this.lastClipboard = url;
       this.setEntry(url);
-      this.fetchFormats();
+      // Clipboard discovery is local: contacting the site needs confirmation.
+      this.onClipboardInput();
     });
+  }
+
+  private onClipboardInput(): void {
+    this.clearDebounce();
+    this.loadedUrl = '';
+    this.formats?.removeAll();
+    this.more?.menu.removeAll();
+    if (this.more) this.more.visible = false;
+    if (this.videoInfo) this.videoInfo.visible = false;
+    this.setPhase('idle');
+    this.setStatus('');
   }
 
   private setEntry(value: string): void {

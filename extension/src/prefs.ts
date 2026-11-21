@@ -14,7 +14,7 @@ export default class YtDownPreferences extends ExtensionPreferences {
     settings.bind('bun-path', runtime, 'text', Gio.SettingsBindFlags.DEFAULT);
     settings.bind('output-directory', directory, 'text', Gio.SettingsBindFlags.DEFAULT);
     const clipboard = new Adw.SwitchRow({ title: 'Use video links from clipboard',
-      subtitle: 'Find formats when opening the panel. Clipboard detection never starts a download.' });
+      subtitle: 'Fill the link field when opening the panel. Press Enter or Find video to contact the site.' });
     settings.bind('clipboard-autofetch', clipboard, 'active', Gio.SettingsBindFlags.DEFAULT);
     const direct = new Adw.SwitchRow({ title: 'Download automatically after pasting',
       subtitle: 'Start without Enter or a quality click. Use your last quality when available, otherwise best video quality.' });

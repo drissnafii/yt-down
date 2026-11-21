@@ -19,14 +19,21 @@ function database(relative: string) {
   return path;
 }
 
+test('does not discover browser cookies unless explicitly enabled', () => {
+  database('.config/zen/profile');
+  database('.mozilla/firefox/profile');
+  expect(args()).toEqual([]);
+  expect(args('none')).toEqual([]);
+});
+
 test('uses Arch Zen profiles with spaces through the Firefox reader', () => {
   database('.config/zen/profile.Default (release)');
-  expect(args()).toEqual(['--cookies-from-browser', `firefox:${home}/.config/zen`]);
+  expect(args('auto')).toEqual(['--cookies-from-browser', `firefox:${home}/.config/zen`]);
 });
 
 test('honors XDG_CONFIG_HOME', () => {
   database('custom-config/zen/profile');
-  expect(args('', join(home, 'custom-config'))).toEqual([
+  expect(args('auto', join(home, 'custom-config'))).toEqual([
     '--cookies-from-browser', `firefox:${home}/custom-config/zen`,
   ]);
 });
@@ -44,13 +51,13 @@ test('prefers Zen over Firefox, and the newest Zen installation', () => {
   utimesSync(old, 1, 1);
   database('.config/zen/profile');
   database('.mozilla/firefox/profile');
-  expect(args()).toEqual(['--cookies-from-browser', `firefox:${home}/.config/zen`]);
+  expect(args('auto')).toEqual(['--cookies-from-browser', `firefox:${home}/.config/zen`]);
 });
 
 test('falls back to Firefox when Zen has no cookie database', () => {
   mkdirSync(join(home, '.config/zen'), { recursive: true });
   database('.mozilla/firefox/profile');
-  expect(args()).toEqual(['--cookies-from-browser', `firefox:${home}/.mozilla/firefox`]);
+  expect(args('auto')).toEqual(['--cookies-from-browser', `firefox:${home}/.mozilla/firefox`]);
 });
 
 test('runs without cookies when no browser database exists', () => {

@@ -23,10 +23,21 @@ if (!frontend.success) throw new AggregateError(frontend.logs, 'Frontend build f
 for (const file of ['metadata.json', 'stylesheet.css', 'schemas']) {
   await cp(join(root, 'extension', file), join(destination, file), { recursive: true });
 }
+await cp(join(root, 'LICENSE'), join(destination, 'LICENSE'));
 await run(['glib-compile-schemas', '--strict', join(destination, 'schemas')]);
 const backend = await Bun.build({ entrypoints: [join(root, 'bin/yt-down.ts')], target: 'bun',
   outdir: destination, naming: 'backend.js', minify: false });
 if (!backend.success) throw new AggregateError(backend.logs, 'Backend build failed');
+// The backend bundles these packages; retain their license notices in the ZIP.
+// Review this list whenever production dependencies or their transitive deps change.
+const notices: string[] = [];
+for (const [name, license] of [
+  ['@clack/prompts', 'LICENSE'], ['@clack/core', 'LICENSE'],
+  ['chalk', 'license'], ['picocolors', 'LICENSE'], ['sisteransi', 'license'],
+] as const) {
+  notices.push(`${name}\n${await Bun.file(join(root, 'node_modules', name, license)).text()}`);
+}
+await Bun.write(join(destination, 'THIRD-PARTY-LICENSES.txt'), notices.join('\n\n'));
 if (command === 'install') {
   const dataHome = process.env.XDG_DATA_HOME || join(homedir(), '.local/share');
   const installed = join(dataHome, 'gnome-shell/extensions/yt-down@drissnafii');

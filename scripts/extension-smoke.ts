@@ -120,6 +120,7 @@ if (process.argv[2] !== '--session') {
     await waitFor(() => evaluate('globalThis.__shellReady()'), value => value.includes("'true'"), 'shell startup complete');
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.entry)'), value => value.includes("'true'"), 'extension initialized');
+    await check("!e.settings.get_boolean('clipboard-autofetch')", 'clipboard access is opt-in');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.button.menu.open(); e.setEntry('invalid'); e.fetchFormats(); return 'OK'; })()");
     await check("e.inputError.visible && e.inputError.get_parent() === e.urlField && !e.statusRow.visible && e.entry.get_text() === 'invalid'", 'validation stays inside input and preserves text');
     await evaluate("globalThis.__getYtDown().entry.set_text('correction'); 'OK'");
@@ -182,7 +183,11 @@ if (process.argv[2] !== '--session') {
     await check("e.jobs[0].choice.height === 720 && e.entry.get_text() === ''", 'automatic download uses remembered quality and clears input');
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0].state'), value => value.includes('"complete"'), 'automatic download completes');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.clear(); e.settings.set_boolean('clipboard-autofetch', true); imports.gi.St.Clipboard.get_default().set_text(imports.gi.St.ClipboardType.CLIPBOARD, 'https://vimeo.com/456'); e.checkClipboard(); return 'OK'; })()");
-    await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'clipboard detection fetches formats');
+    await waitFor(() => evaluate('globalThis.__getYtDown().entry.get_text()'), value => value.includes('https://vimeo.com/456'), 'clipboard fills input locally');
+    await delay(500);
+    await check("e.phase === 'idle' && !e.backend && e.jobs.length === 1", 'clipboard does not contact the site even with automatic downloads enabled');
+    await evaluate("globalThis.__getYtDown().fetchFormats(); 'OK'");
+    await waitFor(() => evaluate('globalThis.__getYtDown().phase'), value => value.includes('"ready"'), 'confirmed clipboard URL fetches formats');
     await check("e.jobs.length === 1", 'clipboard detection does not automatically download');
     await call('org.gnome.Shell.Extensions.DisableExtension', uuid);
     const logs = await readLogs();
