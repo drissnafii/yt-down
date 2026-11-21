@@ -120,6 +120,10 @@ if (process.argv[2] !== '--session') {
     await waitFor(() => evaluate('globalThis.__shellReady()'), value => value.includes("'true'"), 'shell startup complete');
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.entry)'), value => value.includes("'true'"), 'extension initialized');
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.button.menu.open(); e.setEntry('invalid'); e.fetchFormats(); return 'OK'; })()");
+    await check("e.inputError.visible && e.inputError.get_parent() === e.urlField && !e.statusRow.visible && e.entry.get_text() === 'invalid'", 'validation stays inside input and preserves text');
+    await evaluate("globalThis.__getYtDown().entry.set_text('correction'); 'OK'");
+    await check("!e.inputError.visible && e.entry.opacity === 255 && !e.statusRow.visible", 'editing dismisses inline error without an idle helper row');
     await evaluate(`(() => { const e = globalThis.__getYtDown(); e.settings.set_boolean('clipboard-autofetch',false);
       e.settings.set_string('bun-path',${JSON.stringify(process.env.YT_DOWN_SMOKE_BUN)});
       e.button.menu.open(); e.setEntry('https://youtu.be/test'); e.fetchFormats(); return 'OK'; })()`);
@@ -128,10 +132,10 @@ if (process.argv[2] !== '--session') {
     await check("e.formats._getMenuItems().length === 3 && e.more.visible && e.videoInfo.visible && e.moreHint.text === '4K available'", 'simple presets and 4K availability');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.setEntry('https://www.youtube.com/watch?v=test&tracking='+'x'.repeat(500)); return 'OK'; })()");
     await delay(150);
-    await check("(() => { const [fx] = e.urlField.get_transformed_position(); const [cx] = e.clearButton.get_transformed_position(); const [ix] = e.urlField.get_parent().get_transformed_position(); return cx >= fx && cx+e.clearButton.width <= fx+e.urlField.width+1 && fx+e.urlField.width <= ix+e.urlField.get_parent().width+1; })()", 'clear button stays inside long URL field');
+    await check("(() => { const [fx] = e.urlField.get_transformed_position(); const [ix] = e.urlField.get_parent().get_transformed_position(); return e.urlField.get_n_children() === 2 && fx+e.urlField.width <= ix+e.urlField.get_parent().width+1; })()", 'long URL stays within field without a clear button');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.formats._getMenuItems()[0].emit('activate',null); return 'OK'; })()");
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.percent'), value => value.includes("'50'"), 'download progress');
-    await check("e.button.menu.isOpen && e.panelRing.visible && e.jobsScroll.visible && e.entry.clutter_text.editable", 'progress stays visible after activation');
+    await check("!e.statusRow.visible && e.button.menu.isOpen && e.panelRing.visible && e.jobsScroll.visible && e.entry.clutter_text.editable", 'progress stays visible after activation');
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.state'), value => value.includes('"complete"'), 'saved state');
     await waitFor(() => evaluate('globalThis.__getYtDown().jobs[0]?.size.text'), value => value.includes('1.5 MB'), 'actual completed file size');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.entry.grab_key_focus(); e.jobs[0].card.set_hover(false); return 'OK'; })()");
