@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/banner.png" alt="VidLoom banner" width="800">
+  <img src="docs/banner.png" alt="DownDev banner" width="800">
 </p>
 
-# VidLoom
+# DownDev
 
 > **Save videos and audio, right from your GNOME panel.**
 
@@ -10,9 +10,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CLI](https://img.shields.io/badge/CLI-yt--down-green)](bin/yt-down.ts)
 
-**VidLoom** is a video and audio downloader for the GNOME desktop environment, powered by **yt-dlp**. It integrates directly into your GNOME top panel to let you download videos in resolutions up to 4K and extract MP3 audio with live progress, speed tracking, and queue management.
+**DownDev** is a video and audio downloader for the GNOME desktop environment, powered by **yt-dlp**. It integrates directly into your GNOME top panel to let you download videos in resolutions up to 4K and extract MP3 audio with live progress, speed tracking, and queue management.
 
-VidLoom also includes a companion interactive terminal CLI (`yt-down`) built with `@clack/prompts` and `chalk`.
+DownDev also includes a companion interactive terminal CLI (`yt-down`) built with `@clack/prompts` and `chalk`.
 
 ## Features
 
@@ -209,9 +209,10 @@ live YouTube download using cached metadata.
 package. MIT permits redistribution under GPL-compatible terms required for
 GNOME Shell extensions; third-party components retain their own notices.
 
-## GNOME Shell extension — VidLoom (TypeScript)
+<a id="gnome-shell-extension-typescript"></a>
+## GNOME Shell extension — DownDev (TypeScript)
 
-The panel extension, **VidLoom**, lives in `extension/` and supports **GNOME Shell 51**,
+The panel extension, **DownDev**, lives in `extension/` and supports **GNOME Shell 51**,
 which is covered by the isolated UI smoke test. Earlier versions are not declared
 until they are tested. The interface remains TypeScript compiled to GJS; **Bun
 is not required to run the installed extension**. Paste

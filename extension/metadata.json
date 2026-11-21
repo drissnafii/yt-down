@@ -1,7 +1,7 @@
 {
   "uuid": "yt-down@drissnafii",
-  "name": "VidLoom",
-  "description": "VidLoom — Save videos and audio right from your GNOME panel using yt-dlp. Requires yt-dlp and ffmpeg; Deno is recommended for YouTube. Optional clipboard access (off by default) fills the link field locally; press Enter or Find video to contact the site.",
+  "name": "DownDev",
+  "description": "DownDev lets you save videos and audio directly from your GNOME panel using yt-dlp. Requires yt-dlp; ffmpeg enables merging and MP3 conversion. Deno is recommended for YouTube support. Optional clipboard access is disabled by default and fills the link field locally without contacting websites automatically.",
   "shell-version": [
     "51"
   ],

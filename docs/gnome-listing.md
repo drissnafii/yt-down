@@ -4,7 +4,7 @@ This kit is ready for maintainer review; it has not been submitted or approved.
 
 ## Description
 
-VidLoom — Video & Audio Downloader for GNOME
+DownDev — Video & Audio Downloader for GNOME
 
 Save videos and audio directly from your GNOME panel using yt-dlp.
 

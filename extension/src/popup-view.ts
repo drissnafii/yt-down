@@ -41,7 +41,7 @@ export class PopupView {
   private disposed = false;
 
   constructor(private callbacks: Callbacks) {
-    this.button = new PanelMenu.Button(0.0, 'VidLoom');
+    this.button = new PanelMenu.Button(0.0, 'DownDev');
     const menu = this.button.menu as PopupMenu.PopupMenu;
     menu.actor.add_style_class_name('yt-down-popup');
 
@@ -61,7 +61,7 @@ export class PopupView {
     const content = column('yt-down-content');
     menu.box.add_child(content);
     const header = new St.BoxLayout({ style_class: 'yt-down-header' });
-    header.add_child(label('VidLoom', 'yt-down-heading'));
+    header.add_child(label('DownDev', 'yt-down-heading'));
     const settings = new St.Button({ can_focus: true, accessible_name: 'Settings', style_class: 'yt-down-icon-button' });
     settings.set_child(icon('emblem-system-symbolic'));
     settings.connect('clicked', () => { this.button?.menu.close(); this.callbacks.preferences(); });
@@ -301,7 +301,7 @@ export class PopupView {
     this.panelRing.visible = ring; this.panelRing.queue_repaint();
     this.panelActivity.visible = active && !ring;
     if (active && !ring && motionAllowed()) this.panelActivity.play(); else this.panelActivity.stop();
-    this.button.accessible_name = this.active ? `VidLoom, ${this.active} downloads active, ${this.queued} queued`
-      : this.busy() ? 'VidLoom, finding video' : 'VidLoom';
+    this.button.accessible_name = this.active ? `DownDev, ${this.active} downloads active, ${this.queued} queued`
+      : this.busy() ? 'DownDev, finding video' : 'DownDev';
   }
 }

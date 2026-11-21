@@ -8,7 +8,7 @@ export default class YtDownPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
     window.set_default_size(640, 760);
     const settings = this.getSettings();
-    const page = new Adw.PreferencesPage({ title: 'VidLoom', icon_name: 'folder-download-symbolic' });
+    const page = new Adw.PreferencesPage({ title: 'DownDev', icon_name: 'folder-download-symbolic' });
     const group = new Adw.PreferencesGroup({ title: 'Downloads',
       description: 'Uses yt-dlp to save videos and audio. ffmpeg enables conversion and merging; Deno enables YouTube support.' });
     const directory = new Adw.EntryRow({ title: 'Download folder (empty = Videos/yt-down)' });
@@ -36,7 +36,7 @@ export default class YtDownPreferences extends ExtensionPreferences {
       subtitle: findTool('ffmpeg') ? 'ffmpeg is available.' : 'ffmpeg is missing. Original single-stream formats can still download.' }));
     const help = new Adw.ActionRow({ title: 'Installation guide', subtitle: 'Dependencies and setup instructions', activatable: true });
     help.add_suffix(new Gtk.Image({ icon_name: 'external-link-symbolic' }));
-    help.connect('activated', () => { Gio.AppInfo.launch_default_for_uri_async('https://github.com/drissnafii/yt-down#gnome-shell-extension-typescript', null, null, (_app, result) => {
+    help.connect('activated', () => { Gio.AppInfo.launch_default_for_uri_async('https://github.com/drissnafii/yt-down#install-the-extension', null, null, (_app, result) => {
       try { Gio.AppInfo.launch_default_for_uri_finish(result); } catch (error) { logError(error instanceof Error ? error : new Error(String(error))); }
     }); });
     setup.add(help);
