@@ -107,7 +107,7 @@ else:
       XDG_CONFIG_HOME: join(dir, 'config'), XDG_DATA_HOME: join(dir, 'data'), XDG_CACHE_HOME: join(dir, 'cache'),
       LIBGL_ALWAYS_SOFTWARE: '1', YT_DOWN_SMOKE_DIR: dir, YT_DLP_BIN: fakeDownloader, YT_DLP_COOKIES: 'none' };
     await command(['dbus-run-session', '--', process.execPath, import.meta.path, '--session'], env);
-    console.log('GNOME UI: multi-site paste, opt-in automatic downloads, clipboard safeguards, search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and disable/re-enable cleanup across metadata, active, retry and unresponsive workers passed.');
+    console.log('GNOME UI: real pointer/keyboard error recovery, caret placement, selection, paste, multi-site paste, opt-in automatic downloads, clipboard safeguards, search, presets, progress ring, compact completion, hover/focus actions, actual file sizes, player reuse, parallel downloads, queue cancellation, reduced motion and disable/re-enable cleanup across metadata, active, retry and unresponsive workers passed.');
   } finally {
     await rm(dir, { recursive: true, force: true });
     const after = await command(['gsettings', 'get', 'org.gnome.shell', 'enabled-extensions']);
@@ -145,7 +145,7 @@ else:
   };
   const check = async (expression: string, label: string) => {
     const result = await evaluate(`(() => { const e = globalThis.__getYtDown(); return (${expression}) ? 'PASS' : 'FAIL'; })()`);
-    if (!result.includes('"PASS"')) throw new Error(`${label}: ${result}; ` + await evaluate("JSON.stringify({phase:globalThis.__getYtDown().view.phase,open:globalThis.__getYtDown().view.button.menu.isOpen,ring:globalThis.__getYtDown().view.panelRing.visible,jobs:globalThis.__getYtDown().downloads.jobs.length})"));
+    if (!result.includes('"PASS"')) throw new Error(`${label}: ${result}; ` + await evaluate("JSON.stringify({phase:globalThis.__getYtDown().view.phase,open:globalThis.__getYtDown().view.button.menu.isOpen,focus:String(global.stage.key_focus),ring:globalThis.__getYtDown().view.panelRing.visible,jobs:globalThis.__getYtDown().downloads.jobs.length})"));
   };
   const capture = async (name: string) => {
     if (!process.env.YT_DOWN_SCREENSHOT_DIR) return;
@@ -168,23 +168,90 @@ else:
     await call('org.gnome.Shell.Extensions.EnableExtension', uuid);
     await waitFor(() => evaluate('Boolean(globalThis.__getYtDown()?.view.entry)'), value => value.includes("'true'"), 'extension initialized');
     await check("!e.settings.get_boolean('clipboard-autofetch')", 'clipboard access is opt-in');
-    await evaluate("(() => { const e=globalThis.__getYtDown(); e.view.button.menu.open(); e.view.entry.grab_key_focus(); e.setEntry('invalid'); e.fetchFormats(); return 'OK'; })()");
-    await check("e.view.inputError.visible && e.view.inputError.get_parent() === e.view.urlField && !e.view.statusRow.visible && e.view.entry.get_text() === 'invalid'", 'validation stays inside input and preserves text');
-    await delay(300);
-    await check("(() => { const menu=e.view.button.menu; const [mx,my]=menu.actor.get_transformed_position(); const [bx,by]=e.view.button.get_transformed_position(); const center=bx+e.view.button.width/2; const expected=Math.max(0,Math.min(1280-menu.actor.width,center-menu.actor.width/2)); return Math.abs(mx-expected)<24 && my>=by+e.view.button.height; })()", 'popup is centered below its panel icon within screen bounds');
-    // Click the entry padding, outside ClutterText. Programmatic set_text()
-    // alone misses regressions where only the text actor handles presses.
+    // Virtual devices enter Mutter's normal input pipeline: picking, capture,
+    // native entry gestures, focus and key handling. Never emit actor signals.
     await evaluate(`(() => {
-      const v=globalThis.__getYtDown().view;
-      const [x,y]=v.entry.get_transformed_position();
-      const target=global.stage.get_actor_at_pos(imports.gi.Clutter.PickMode.REACTIVE,x+2,y+2);
-      if (target!==v.entry && target!==v.urlField) throw new Error('Input padding is not clickable: '+target);
-      target.emit('button-press-event',null);
+      const C=imports.gi.Clutter, seat=global.stage.context.get_backend().get_default_seat();
+      globalThis.__pointer=seat.create_virtual_device(C.InputDeviceType.POINTER_DEVICE);
+      globalThis.__keyboard=seat.create_virtual_device(C.InputDeviceType.KEYBOARD_DEVICE);
       return 'OK';
     })()`);
-    await check("!e.view.inputError.visible && e.view.entry.clutter_text.has_key_focus() && e.view.entry.get_text() === 'invalid'", 'clicking input padding dismisses error, focuses entry and preserves URL');
-    await evaluate("globalThis.__getYtDown().view.entry.clutter_text.insert_text('x',-1); 'OK'");
-    await check("e.view.entry.get_text().includes('x') && !e.view.inputError.visible && e.view.entry.opacity === 255 && !e.view.statusRow.visible", 'focused text remains editable after error dismissal');
+    const key = async (name: string, modifier?: string) => {
+      for (const [keyName, state] of [
+        ...(modifier ? [[modifier, 'PRESSED']] : []), [name, 'PRESSED'], [name, 'RELEASED'],
+        ...(modifier ? [[modifier, 'RELEASED']] : []),
+      ]) {
+        await evaluate(`__keyboard.notify_keyval(imports.gi.GLib.get_monotonic_time(), imports.gi.Clutter.KEY_${keyName}, imports.gi.Clutter.KeyState.${state}); 'OK'`);
+        await delay(30);
+      }
+    };
+    const move = async (fraction: number, padding = false) => {
+      const motion = (relative: boolean) => evaluate(`(() => {
+        const a=globalThis.__getYtDown().view.entry, [x,y]=a.get_transformed_position();
+        const [px,py]=${relative ? 'global.get_pointer()' : '[0,0]'};
+        __pointer.${relative ? 'notify_relative_motion' : 'notify_absolute_motion'}(imports.gi.GLib.get_monotonic_time(),
+          x+${padding ? '2' : `a.width*${fraction}`}-px,
+          y+${padding ? '2' : 'a.height/2'}-py);
+        return 'OK';
+      })()`);
+      await motion(false);
+      await delay(100);
+      // The headless seat can constrain its first warp at the panel edge.
+      // Correct the remaining distance before pressing any mouse button.
+      await motion(true);
+      await delay(100);
+      await check("(() => { const [x,y]=global.get_pointer(); return e.view.entry.contains(global.stage.get_actor_at_pos(imports.gi.Clutter.PickMode.REACTIVE,x,y)); })()", 'pointer reaches the native entry through the visual error overlay');
+    };
+    const button = async (state: string) => {
+      await evaluate(`__pointer.notify_button(imports.gi.GLib.get_monotonic_time(),1,imports.gi.Clutter.ButtonState.${state}); 'OK'`);
+      await delay(60);
+    };
+    const click = async (fraction: number, padding = false) => {
+      await move(fraction, padding); await button('PRESSED'); await button('RELEASED');
+    };
+    await delay(300);
+    await evaluate("globalThis.__getYtDown().view.button.menu.open(); 'OK'");
+    await delay(300);
+    await check("(() => { const menu=e.view.button.menu; const [mx,my]=menu.actor.get_transformed_position(); const [bx,by]=e.view.button.get_transformed_position(); const center=bx+e.view.button.width/2; const expected=Math.max(0,Math.min(1280-menu.actor.width,center-menu.actor.width/2)); return Math.abs(mx-expected)<24 && my>=by+e.view.button.height; })()", 'popup is centered below its panel icon within screen bounds');
+    for (const text of ['', 'invalid']) {
+      for (const position of [0.5, 0.05, 0.95, -1]) {
+        await evaluate(`(() => { const e=globalThis.__getYtDown(); e.setEntry(${JSON.stringify(text)}); e.view.entry.grab_key_focus(); return 'OK'; })()`);
+        await check("e.view.entry.clutter_text.has_key_focus() && e.view.button.menu.isOpen", `entry focused before real Enter (${JSON.stringify(text)}, ${position})`);
+        await key('Return');
+        await check("e.view.inputError.visible && e.view.inputError.get_parent() === e.view.urlField && !e.view.statusRow.visible && e.view.entry.opacity === 255 && e.view.entry.clutter_text.editable && !e.view.urlField.reactive", 'validation preserves the native entry and inside-field error');
+        await check(`e.view.entry.get_text() === ${JSON.stringify(text)}`, 'validation preserves the original URL');
+        await check("e.view.entry.clutter_text.opacity === 0 && (!e.view.entry.hint_actor || e.view.entry.hint_actor.opacity === 0)", 'error hides the original text renderer, caret, selection and hint independently of theme colors');
+        if (position === 0.5) await capture(text ? 'invalid-input-error' : 'empty-input-error');
+        await click(position < 0 ? 0 : position, position < 0);
+        await check("!e.view.inputError.visible && e.view.entry.clutter_text.has_key_focus() && e.view.button.menu.isOpen", 'first real click dismisses error and focuses entry without reopening');
+        await check(`e.view.entry.clutter_text.opacity === 255 && e.view.entry.get_text() === ${JSON.stringify(text)}`, 'first click restores the exact original text and its renderer');
+        if (text && position === 0.5) await capture('invalid-input-restored');
+        await key('x');
+        await check("e.view.entry.get_text().includes('x') && !e.view.inputError.visible", 'typing works immediately after first click');
+      }
+    }
+    // Recover while focus never left the entry; selection and buffer survive.
+    await evaluate("(() => { const e=globalThis.__getYtDown(); e.setEntry('invalid'); e.view.entry.clutter_text.set_selection(1,4); e.fetchFormats(); return 'OK'; })()");
+    await check("e.view.entry.clutter_text.opacity === 0 && e.view.entry.clutter_text.get_selection() === 'nva'", 'error hides selection rendering without changing the selection');
+    await key('x');
+    await check("e.view.entry.get_text() === 'ixlid' && !e.view.inputError.visible", 'already-focused keyboard input preserves and replaces selection');
+    await key('Return');
+    await key('a', 'Control_L');
+    await key('BackSpace');
+    await check("e.view.entry.get_text() === '' && !e.view.inputError.visible", 'Ctrl+A and Backspace work immediately during an error');
+    await key('Return');
+    await evaluate("imports.gi.St.Clipboard.get_default().set_text(imports.gi.St.ClipboardType.CLIPBOARD,'pasted invalid URL'); 'OK'");
+    await key('v', 'Control_L');
+    await waitFor(() => evaluate("globalThis.__getYtDown().view.entry.get_text()"), value => value.includes('pasted invalid URL'), 'paste into already-focused error field');
+    await check("!e.view.inputError.visible", 'paste clears error presentation');
+    // First click retains native caret placement, and drag still selects text.
+    await key('Return');
+    await click(0.95);
+    await key('x');
+    await check("e.view.entry.get_text() === 'pasted invalid URLx'", 'native click positions caret at end of restored URL');
+    await key('Return');
+    await move(0.95); await button('PRESSED'); await move(0.03); await button('RELEASED');
+    await check("!e.view.inputError.visible && e.view.entry.clutter_text.get_selection().length > 0", 'first press over error supports native drag selection');
     await evaluate("globalThis.__downloader=imports.gi.GLib.getenv('YT_DLP_BIN'); imports.gi.GLib.setenv('YT_DLP_BIN','/missing/yt-dlp',true); globalThis.__getYtDown().setEntry('https://youtu.be/test'); globalThis.__getYtDown().fetchFormats(); 'OK'");
     await check("e.view.phase === 'error' && e.view.inputError.text.includes('Setup needed') && !e.backend", 'missing dependency uses the input with setup guidance');
     await evaluate("imports.gi.GLib.setenv('YT_DLP_BIN',globalThis.__downloader,true); 'OK'");
