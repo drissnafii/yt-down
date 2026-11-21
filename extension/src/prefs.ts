@@ -8,7 +8,7 @@ export default class YtDownPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
     window.set_default_size(640, 760);
     const settings = this.getSettings();
-    const page = new Adw.PreferencesPage({ title: 'yt-down', icon_name: 'folder-download-symbolic' });
+    const page = new Adw.PreferencesPage({ title: 'VidLoom', icon_name: 'folder-download-symbolic' });
     const group = new Adw.PreferencesGroup({ title: 'Downloads',
       description: 'Uses yt-dlp to save videos and audio. ffmpeg enables conversion and merging; Deno enables YouTube support.' });
     const directory = new Adw.EntryRow({ title: 'Download folder (empty = Videos/yt-down)' });

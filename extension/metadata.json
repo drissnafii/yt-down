@@ -1,7 +1,7 @@
 {
   "uuid": "yt-down@drissnafii",
-  "name": "yt-down",
-  "description": "Download videos and MP3 audio from your GNOME panel using yt-dlp. Requires yt-dlp and ffmpeg; Deno is recommended for YouTube. Optional clipboard access (off by default) fills the link field locally; press Enter or Find video to contact the site.",
+  "name": "VidLoom",
+  "description": "VidLoom — Save videos and audio right from your GNOME panel using yt-dlp. Requires yt-dlp and ffmpeg; Deno is recommended for YouTube. Optional clipboard access (off by default) fills the link field locally; press Enter or Find video to contact the site.",
   "shell-version": [
     "51"
   ],

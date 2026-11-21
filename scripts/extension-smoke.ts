@@ -232,14 +232,14 @@ else:
     if (process.env.YT_DOWN_SCREENSHOT_DIR) {
       await command(['dbus-update-activation-environment', `WAYLAND_DISPLAY=yt-down-smoke-${process.pid}`]);
       await evaluate("(() => { const e=globalThis.__getYtDown(); e.settings.set_string('output-directory',''); e.view.button.menu.close(); e.openPreferences(); return 'OK'; })()");
-      await waitFor(() => evaluate("global.get_window_actors().some(a=>a.meta_window.get_title()?.includes('yt-down'))"), value => value.includes("'true'"), 'preferences window');
-      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window.activate(global.get_current_time()); 'OK'");
+      await waitFor(() => evaluate("global.get_window_actors().some(a=>a.meta_window.get_title()?.includes('VidLoom') || a.meta_window.get_title()?.includes('yt-down'))"), value => value.includes("'true'"), 'preferences window');
+      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('VidLoom') || a.meta_window.get_title()?.includes('yt-down')).meta_window.activate(global.get_current_time()); 'OK'");
       await evaluate("globalThis.__clearNotifications(); 'OK'");
       await delay(800);
-      const bounds = await evaluate("(() => { const w=global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window; const r=w.get_frame_rect(); return [r.x,r.y,r.width,r.height].join(','); })()");
+      const bounds = await evaluate("(() => { const w=global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('VidLoom') || a.meta_window.get_title()?.includes('yt-down')).meta_window; const r=w.get_frame_rect(); return [r.x,r.y,r.width,r.height].join(','); })()");
       await command(['gdbus','call','--session','--dest','org.gnome.Shell.Screenshot','--object-path','/org/gnome/Shell/Screenshot',
         '--method','org.gnome.Shell.Screenshot.ScreenshotArea',...bounds.match(/\d+,\d+,\d+,\d+/)![0].split(','),'false',join(process.env.YT_DOWN_SCREENSHOT_DIR,'preferences.png')]);
-      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('yt-down')).meta_window.delete(global.get_current_time()); 'OK'");
+      await evaluate("global.get_window_actors().find(a=>a.meta_window.get_title()?.includes('VidLoom') || a.meta_window.get_title()?.includes('yt-down')).meta_window.delete(global.get_current_time()); 'OK'");
     }
     for (const phase of ['metadata', 'active', 'retry', 'stubborn']) {
       await evaluate(`(() => { const e=globalThis.__getYtDown(); e.clear(); e.settings.set_boolean('download-on-paste',false); e.settings.set_boolean('clipboard-autofetch',false); e.settings.set_string('output-directory',${JSON.stringify(join(dir, 'downloads'))}); e.setEntry('https://youtu.be/disable-${phase}'); e.fetchFormats(); return 'OK'; })()`);

@@ -4,9 +4,9 @@ This kit is ready for maintainer review; it has not been submitted or approved.
 
 ## Description
 
-yt-down — Video & Audio Downloader for GNOME
+VidLoom — Video & Audio Downloader for GNOME
 
-Download videos and audio directly from your GNOME top panel using yt-dlp.
+Save videos and audio directly from your GNOME panel using yt-dlp.
 
 - Choose video quality, including HD and 4K when available.
 - Download original audio or convert it to MP3.

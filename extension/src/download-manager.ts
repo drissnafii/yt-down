@@ -95,9 +95,9 @@ export class DownloadManager {
       case 'file': job.filePath = event.path; break;
       case 'complete':
         job.state = 'complete'; job.percent = 100; job.directory = event.directory; job.view.saved(job.filePath);
-        Main.notify('yt-down', `Saved: ${job.title}`); break;
+        Main.notify('VidLoom', `Saved: ${job.title}`); break;
       case 'cancelled': job.state = 'cancelled'; job.view.cancelled(); break;
-      case 'error': job.state = 'error'; job.view.failed(event.message); Main.notifyError('yt-down', `${job.title}: ${event.message}`); break;
+      case 'error': job.state = 'error'; job.view.failed(event.message); Main.notifyError('VidLoom', `${job.title}: ${event.message}`); break;
       case 'formats': break;
     }
     this.callbacks.changed();

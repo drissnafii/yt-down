@@ -47,7 +47,7 @@ export async function main(): Promise<void> {
   showLogo();
 
   // Step 1 — Intro
-  p.intro(chalk.bgRed.white.bold(' ⬢  yt-down  ⬢ ') + chalk.dim('  Interactive Video Downloader'));
+  p.intro(chalk.bgRed.white.bold(' ⬢  VidLoom  ⬢ ') + chalk.dim('  Interactive Video Downloader (yt-down)'));
 
   // Step 2 — Select mode
   const mode = await p.select({
