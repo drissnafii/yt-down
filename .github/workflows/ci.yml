@@ -57,6 +57,10 @@ jobs:
     name: GNOME 51 UI
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      # Container action and shell steps can have different home directories.
+      # Keep tool installation and lookup in one explicit, shared location.
+      MISE_DATA_DIR: /opt/mise/data
     # Fedora 45 provides Shell 51; pin the official container index by digest.
     container:
       image: registry.fedoraproject.org/fedora@sha256:7b6d9048825950573e58b7185631f6bd38f7c24f5c0e68ae902870aedebb86e0
@@ -78,8 +82,8 @@ jobs:
           mise_dir: /opt/mise
       - name: Build the actual extension package
         run: |
-          bun install --frozen-lockfile --ignore-scripts
-          bun run extension:pack
+          mise exec -- bun install --frozen-lockfile --ignore-scripts
+          mise exec -- bun run extension:pack
       - name: Load and exercise the package in GNOME 51
         run: |
           chown -R 1000:1000 "$GITHUB_WORKSPACE"
