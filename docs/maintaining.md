@@ -49,7 +49,9 @@ history as appropriate. Deleting the latest file does not remove history.
 
 ## GNOME publication status
 
-The extension has not been submitted. Review the current
+Version 0.1.0 was [submitted](https://extensions.gnome.org/review/78814/)
+and is awaiting human review. Before uploading 0.1.1, check that review for
+human comments and address them first if review has started. Review the current
 [GNOME guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)
 before every submission. In particular:
 
@@ -58,6 +60,10 @@ before every submission. In particular:
   executable binary in the ZIP. Heavy parsing and retry work stay outside Shell.
   Explain the external tools to reviewers; this architecture does not guarantee
   approval. No automatic dependency installation is implemented.
+- **Review warnings:** see [the warning analysis](gnome-review.md) for the
+  schema packaging fix, worker entry point and lifecycle ownership. Release
+  ZIPs must contain schema XML without `gschemas.compiled`; the package smoke
+  test checks this before compiling schemas in its isolated installation.
 - **Clipboard:** access is disclosed in metadata and off by default. When
   enabled, it only fills the field locally; Enter or Find video authorizes
   sending the URL. Verify this behavior in the smoke test.

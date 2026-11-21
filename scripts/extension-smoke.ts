@@ -26,6 +26,15 @@ if (process.argv[2] !== '--session') {
     if (process.argv.includes('--package')) {
       await mkdir(join(extensions, uuid), { recursive: true });
       await command(['unzip', '-q', join(repo, 'dist', uuid + '.shell-extension.zip'), '-d', join(extensions, uuid)]);
+      const packaged = join(extensions, uuid);
+      if (await Bun.file(join(packaged, 'schemas/gschemas.compiled')).exists())
+        throw new Error('Release ZIP must not contain gschemas.compiled.');
+      for (const file of ['worker.js', 'schemas/org.gnome.shell.extensions.yt-down.gschema.xml']) {
+        if (!await Bun.file(join(packaged, file)).exists()) throw new Error(`Release ZIP is missing ${file}.`);
+      }
+      // Match extension installation: the archive ships XML, and the installer
+      // compiles it before Shell loads the installed extension.
+      await command(['glib-compile-schemas', '--strict', join(packaged, 'schemas')]);
     } else await cp(join(repo, 'dist', uuid), join(extensions, uuid), { recursive: true });
     const shellVersion = (await command(['gnome-shell', '--version'])).match(/\d+/)![0]!;
     if (shellVersion !== '51') throw new Error(`This UI test requires GNOME 51; found ${shellVersion}.`);

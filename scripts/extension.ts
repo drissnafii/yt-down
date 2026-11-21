@@ -21,10 +21,14 @@ const frontend = await Bun.build({
 });
 if (!frontend.success) throw new AggregateError(frontend.logs, 'Frontend build failed');
 for (const file of ['metadata.json', 'stylesheet.css', 'schemas']) {
-  await cp(join(root, 'extension', file), join(destination, file), { recursive: true });
+  await cp(join(root, 'extension', file), join(destination, file), {
+    recursive: true, filter: source => !source.endsWith('/gschemas.compiled'),
+  });
 }
 await cp(join(root, 'LICENSE'), join(destination, 'LICENSE'));
-await run(['glib-compile-schemas', '--strict', join(destination, 'schemas')]);
+// EGO compiles schemas on installation. Validate release XML without shipping
+// generated binaries; direct local builds/installations still need the cache.
+await run(['glib-compile-schemas', '--strict', ...(command === 'pack' ? ['--dry-run'] : []), join(destination, 'schemas')]);
 if (command === 'install') {
   const dataHome = process.env.XDG_DATA_HOME || join(homedir(), '.local/share');
   const installed = join(dataHome, 'gnome-shell/extensions/yt-down@drissnafii');
