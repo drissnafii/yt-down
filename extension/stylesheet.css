@@ -51,4 +51,4 @@
 .yt-down-row-action { min-width: 28px; min-height: 28px; padding: 2px; border-radius: 4px; }
 .yt-down-row-action:hover, .yt-down-row-action:focus { background-color: rgba(128,128,128,0.24); }
 
-.yt-down-input-error { color: #f66151; font-size: 0.9em; padding: 0 10px; min-width: 0; }
+.yt-down-input-error { color: #eca09a; font-size: 0.9em; padding: 0 10px; min-width: 0; }
