@@ -1,41 +1,14 @@
 import { getOutputDirectory } from './output-directory.ts';
 import { DownloadCancelledError } from './download-recovery.ts';
-import { getVideoInfo, hasVideoFormats, parseVideoFormats, parseAudioFormats, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
+import { getVideoInfo, downloadVideo, downloadAudio, downloadMp3 } from './yt-dlp.ts';
 import { normalizeVideoUrl } from './utils.ts';
 import type { BackendEvent } from './protocol.ts';
 
-const emit = (event: BackendEvent) => console.log(JSON.stringify(event));
+import { createProgressParser } from './progress.ts';
+export { createProgressParser } from './progress.ts';
+import { formatChoices } from './format-model.ts';
 
-/** Each stream gets its own parser so interleaved stdout/stderr cannot corrupt lines. */
-export function createProgressParser(report: (event: BackendEvent) => void) {
-  let pending = '';
-  function line(value: string) {
-    if (value.startsWith('yt-down-progress:')) {
-      try {
-        const progress = JSON.parse(value.slice('yt-down-progress:'.length));
-        const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : null;
-        const downloaded = number(progress.downloaded_bytes);
-        const total = number(progress.total_bytes) ?? number(progress.total_bytes_estimate);
-        report({ type: 'progress',
-          percent: downloaded !== null && total && total > 0 ? Math.min(100, Math.max(0, downloaded / total * 100)) : null,
-          speed: number(progress.speed), eta: number(progress.eta) });
-      } catch { /* Ignore incomplete or unsupported progress records. */ }
-    } else if (value.startsWith('yt-down-file:')) {
-      try {
-        const path: unknown = JSON.parse(value.slice('yt-down-file:'.length));
-        if (typeof path === 'string') report({ type: 'file', path });
-      } catch { /* Not a valid output path. */ }
-    } else if (/^\[(Merger|ExtractAudio|Fixup\w*)\]/.test(value)) {
-      report({ type: 'status', message: 'Finishing media…' });
-    }
-  }
-  return (chunk: string) => {
-    pending += chunk;
-    const lines = pending.split(/[\r\n]/);
-    pending = lines.pop()!.slice(-65_536);
-    for (const value of lines) line(value);
-  };
-}
+const emit = (event: BackendEvent) => console.log(JSON.stringify(event));
 
 export async function runJsonCommand(args: string[]): Promise<void> {
   const controller = new AbortController();
@@ -56,16 +29,8 @@ export async function runJsonCommand(args: string[]): Promise<void> {
     const info = await getVideoInfo(url, controller.signal);
     if (controller.signal.aborted) throw new DownloadCancelledError();
     if (command === 'formats') {
-      const videos = parseVideoFormats(info);
-      const audio = parseAudioFormats(info);
-      emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration, thumbnail: info.thumbnail,
-        choices: [
-          ...(hasVideoFormats(info) ? [{ id: 'best', mode: 'video' as const, label: 'Best quality', sizeLabel: 'Auto' }] : []),
-          ...videos.map(f => ({ id: f.formatId, mode: 'video' as const, label: f.resolution, height: f.height, fps: f.fps,
-            sizeLabel: f.filesizeLabel, variant: f.variant })),
-          ...((info.formats ?? []).some(f => f.acodec && f.acodec !== 'none') ? [{ id: 'best', mode: 'mp3' as const, label: 'Audio only', sizeLabel: 'MP3' }] : []),
-          ...audio.map(f => ({ id: f.formatId, mode: 'audio' as const, label: `Audio · ${f.codec}`, sizeLabel: f.filesizeLabel })),
-        ] });
+      emit({ type: 'formats', title: info.title, channel: info.channel ?? '', duration: info.duration,
+      thumbnail: info.thumbnail, choices: formatChoices(info) });
       return;
     }
     const directory = getOutputDirectory({ directory: output, url });

@@ -28,10 +28,22 @@ jobs:
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
         with:
           cache: false
-      - name: Install GLib build tools
+      - name: Install GJS and media test tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libglib2.0-bin
+          sudo apt-get install --no-install-recommends -y libglib2.0-bin gjs python3 ffmpeg
+      - name: Install checksum-verified yt-dlp for integration tests
+        env:
+          YT_DOWN_CI_RELEASE: "2026.10.26"
+          YT_DOWN_CI_SHA256: e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+        run: |
+          mkdir -p "$RUNNER_TEMP/yt-down-tools"
+          curl --fail --silent --show-error --location --retry 3 --proto '=https' \
+            "https://github.com/yt-dlp/yt-dlp/releases/download/$YT_DOWN_CI_RELEASE/yt-dlp" \
+            --output "$RUNNER_TEMP/yt-down-tools/yt-dlp"
+          printf '%s  %s\n' "$YT_DOWN_CI_SHA256" "$RUNNER_TEMP/yt-down-tools/yt-dlp" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/yt-down-tools/yt-dlp"
+          echo "$RUNNER_TEMP/yt-down-tools" >> "$GITHUB_PATH"
       - name: Install locked dependencies
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Tests
@@ -41,5 +53,49 @@ jobs:
       - name: Build extension (includes GNOME typecheck)
         run: bun run extension:build
 
-# GNOME smoke tests run separately in an isolated desktop session; this job
-# does not claim coverage of GNOME versions unavailable on this runner.
+  gnome-51:
+    name: GNOME 51 UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Container action and shell steps can have different home directories.
+      # Keep tool installation and lookup in one explicit, shared location.
+      MISE_DATA_DIR: /opt/mise/data
+    # Fedora 45 provides Shell 51; pin the official container index by digest.
+    container:
+      image: registry.fedoraproject.org/fedora@sha256:7b6d9048825950573e58b7185631f6bd38f7c24f5c0e68ae902870aedebb86e0
+    steps:
+      - name: Install GNOME test environment
+        run: |
+          dnf install -y git unzip zip tar gzip xz libstdc++ gnome-shell gjs gtk4 libadwaita \
+            dbus-daemon dbus-tools mesa-dri-drivers mesa-libEGL mesa-libGL \
+            xorg-x11-server-Xwayland python3 shadow-utils dejavu-sans-fonts util-linux procps-ng
+          gnome-shell --version
+          # Shell's login/parental-control proxies need a system bus even in a
+          # headless container. This socket belongs only to this disposable job.
+          mkdir -p /run/dbus
+          dbus-uuidgen --ensure
+          dbus-daemon --system --fork --nopidfile
+          # RPMs create this empty runtime directory, but PID 1 here is not
+          # systemd. Let GNOME use its built-in non-systemd login manager.
+          if [ -d /run/systemd/seats ]; then rmdir /run/systemd/seats; fi
+          useradd --create-home --uid 1000 yt-down-ci
+          install -d -m 700 -o 1000 -g 1000 /tmp/yt-down-runtime
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          cache: false
+          mise_dir: /opt/mise
+      - name: Build the actual extension package
+        run: |
+          mise exec -- bun install --frozen-lockfile --ignore-scripts
+          mise exec -- bun run extension:pack
+      - name: Load and exercise the package in GNOME 51
+        run: |
+          chown -R 1000:1000 "$GITHUB_WORKSPACE"
+          YT_DOWN_CI_BUN="$(mise which bun)"
+          runuser -u yt-down-ci -- env XDG_RUNTIME_DIR=/tmp/yt-down-runtime \
+            GSETTINGS_BACKEND=memory LIBGL_ALWAYS_SOFTWARE=1 XDG_SESSION_TYPE=wayland \
+            "$YT_DOWN_CI_BUN" run extension:smoke --package

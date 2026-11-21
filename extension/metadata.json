@@ -1,17 +1,16 @@
 {
   "uuid": "yt-down@drissnafii",
   "name": "yt-down",
-  "description": "Download videos and audio from sites supported by yt-dlp from the panel. Requires Bun, yt-dlp and ffmpeg. Optional clipboard access (off by default) fills the link field when the popup opens; press Enter or Find video to contact the site.",
+  "description": "Download videos and MP3 audio from your GNOME panel using yt-dlp. Requires yt-dlp and ffmpeg; Deno is recommended for YouTube. Optional clipboard access (off by default) fills the link field locally; press Enter or Find video to contact the site.",
   "shell-version": [
-    "45",
-    "46",
-    "47",
-    "48",
-    "49",
-    "50",
     "51"
   ],
   "url": "https://github.com/drissnafii/yt-down",
   "settings-schema": "org.gnome.shell.extensions.yt-down",
-  "version": 7
+  "version-name": "0.1.0",
+  "donations": {
+    "custom": [
+      "https://drissnafii.gumroad.com/l/support"
+    ]
+  }
 }

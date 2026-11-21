@@ -35,7 +35,7 @@ try {
           executable, '--ignore-config', '--no-playlist', '--continue', '--part',
           ...getCookieArgs(), '--js-runtimes', Bun.env.YT_DLP_JS_RUNTIME ?? 'bun',
           '--abort-on-unavailable-fragments', '--socket-timeout', '15', '--retries', '0', '--fragment-retries', '0',
-          ...getTransferArgs(setting), '-f', formatId, '-o', join(output, '%(id)s.%(ext)s'),
+          ...getTransferArgs({ ...setting, findExecutable: Bun.which, warn: console.error }), '-f', formatId, '-o', join(output, '%(id)s.%(ext)s'),
           '--merge-output-format', 'mp4', '--newline', '--progress', '--progress-delta', '0',
           '--progress-template', 'download:YT_DOWN_BYTES:%(progress.downloaded_bytes)s|%(progress.status)s',
           '--progress-template', 'postprocess:YT_DOWN_PP:%(progress.postprocessor)s|%(progress.status)s',

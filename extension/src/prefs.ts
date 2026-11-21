@@ -1,17 +1,17 @@
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk?version=4.0';
+import { missingDependencies, findTool } from './dependencies.js';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 export default class YtDownPreferences extends ExtensionPreferences {
   fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
+    window.set_default_size(640, 760);
     const settings = this.getSettings();
     const page = new Adw.PreferencesPage({ title: 'yt-down', icon_name: 'folder-download-symbolic' });
     const group = new Adw.PreferencesGroup({ title: 'Downloads',
-      description: 'The bundled yt-down backend requires Bun, yt-dlp and ffmpeg. Existing YT_DLP_* and YT_DOWN_* session environment settings apply.' });
-    const runtime = new Adw.EntryRow({ title: 'Bun executable (empty = automatic)' });
+      description: 'Uses yt-dlp to save videos and audio. ffmpeg enables conversion and merging; Deno enables YouTube support.' });
     const directory = new Adw.EntryRow({ title: 'Download folder (empty = Videos/yt-down)' });
-    settings.bind('bun-path', runtime, 'text', Gio.SettingsBindFlags.DEFAULT);
     settings.bind('output-directory', directory, 'text', Gio.SettingsBindFlags.DEFAULT);
     const clipboard = new Adw.SwitchRow({ title: 'Use video links from clipboard',
       subtitle: 'Fill the link field when opening the panel. Press Enter or Find video to contact the site.' });
@@ -25,8 +25,22 @@ export default class YtDownPreferences extends ExtensionPreferences {
     group.add(parallel);
     group.add(clipboard);
     group.add(direct);
-    group.add(runtime);
+
     group.add(directory);
+    const missing = missingDependencies();
+    const setup = new Adw.PreferencesGroup({ title: 'Setup',
+      description: missing.length ? `Missing: ${missing.join(', ')}. Install the tools below, then reopen the popup.` : 'Downloader tools are ready.' });
+    setup.add(new Adw.ActionRow({ title: 'Install downloader tools',
+      subtitle: 'Use your distribution’s software manager for yt-dlp. Add ffmpeg for MP3 and merging, and Deno for YouTube.' }));
+    setup.add(new Adw.ActionRow({ title: 'Conversion and merging',
+      subtitle: findTool('ffmpeg') ? 'ffmpeg is available.' : 'ffmpeg is missing. Original single-stream formats can still download.' }));
+    const help = new Adw.ActionRow({ title: 'Installation guide', subtitle: 'Dependencies and setup instructions', activatable: true });
+    help.add_suffix(new Gtk.Image({ icon_name: 'external-link-symbolic' }));
+    help.connect('activated', () => { Gio.AppInfo.launch_default_for_uri_async('https://github.com/drissnafii/yt-down#gnome-shell-extension-typescript', null, null, (_app, result) => {
+      try { Gio.AppInfo.launch_default_for_uri_finish(result); } catch (error) { logError(error instanceof Error ? error : new Error(String(error))); }
+    }); });
+    setup.add(help);
+    page.add(setup);
     page.add(group);
     window.add(page);
     return Promise.resolve();

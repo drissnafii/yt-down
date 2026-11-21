@@ -9,7 +9,7 @@ A premium interactive CLI tool wrapping **yt-dlp** with beautiful prompts, real-
 - 📹 **Video Download** — Choose quality from dynamically fetched formats (4K → 144p)
 - 🎙 **Podcast Mode** — Auto-select best audio track for audio-only downloads
 - ⬢ **Beautiful CLI** — Built with `@clack/prompts` + `chalk` for a premium feel
-- ⚡ **Fast** — Powered by Bun runtime
+- ⚡ **Transfers** — Parallel fragments and resumable downloads
 - 📊 **Smart Formats** — Quality and smaller-file choices, frame rates, estimated video + audio totals
 - 🔄 **Interruption Recovery** — Waits through connection failures and resumes saved downloads
 - 🚀 **Faster Startup** — Reuses the metadata fetched for the picker; four concurrent fragments by default
@@ -201,10 +201,10 @@ GNOME Shell extensions; third-party components retain their own notices.
 
 ## GNOME Shell extension (TypeScript)
 
-The panel extension lives in `extension/` and supports GNOME Shell **45+**
-(currently declared versions: **45–51**; runtime tested on **51**). It adapts to
-the older GNOME 45–47 widget APIs. Future GNOME releases require compatibility
-checks and an explicit metadata update before they can be enabled. Paste
+The panel extension lives in `extension/` and supports **GNOME Shell 51**,
+which is covered by the isolated UI smoke test. Earlier versions are not declared
+until they are tested. The interface remains TypeScript compiled to GJS; **Bun
+is not required to run the installed extension**. Paste
 a video link to fetch formats automatically. Optional clipboard detection is
 **off by default** and can be enabled in Settings. Opening the popup then reads
 a supported link into the field locally; press Enter or Find video before the
@@ -248,60 +248,96 @@ repeated launches while the player starts. Buttons use a neutral fill and modest
 corner rounding. MP3 downloads are converted by ffmpeg; original audio
 formats remain available under Show more.
 
-The frontend is TypeScript compiled to readable GJS ES modules. It launches a
-bundled copy of **this repository's backend** through `Gio.Subprocess`, using
-asynchronous pipe reads. The backend retains the CLI's cookie selection, format
-choices, transfer settings and interruption recovery. Metadata is refreshed when
-you select a format, then reused for that download. The terminal CLI still works
-as before.
+The frontend starts an isolated, readable **GJS worker** through
+`Gio.Subprocess`. The worker invokes the installed yt-dlp directly and keeps
+metadata parsing, pipe processing and retries outside GNOME Shell. Its metadata
+stays in memory after format discovery and is reused when you choose a quality.
+The first download attempt uses a private temporary information file, deleted
+after completion or cancellation. Snapshots older than five minutes are skipped;
+rejected signed URLs trigger a fresh extraction with saved progress. Native
+fragment concurrency, optional aria2, resume behavior, and bounded URL refreshes
+are retained. Cancellation signals the process group, including ffmpeg/aria2,
+with a forced stop after three seconds if needed. Disabling the extension
+immediately stops workers and removes outstanding cancellation timers.
 
-### Build and install
+The extension entry point owns only enable/disable. `application.ts` coordinates
+input and discovery, `popup-view.ts` owns popup/panel presentation,
+`download-view.ts` owns job cards, and `download-manager.ts` owns the queue and
+workers. Each module destroys its own actors, subscriptions, queries or workers.
 
-Install Bun with mise if needed, then install the repo dependencies:
+Format selection, progress parsing, transfer options and failure classification
+are shared with the Bun CLI as pure TypeScript modules. Removing Bun from the
+extension reduces installation requirements; it is not a claim of faster media
+transfers. Bun remains the CLI runtime and development/build tool.
+
+### Install the extension
+
+The extension has not yet been submitted to GNOME Extensions. Once approved,
+users can install it from the GNOME catalog or Extension Manager and see its
+panel icon. The extension ZIP cannot install system downloader tools for them.
+This is **not a zero-setup downloader**.
+
+Install **yt-dlp** and **GJS** from your distribution's software manager. Add
+**ffmpeg** for MP3 conversion and audio/video merging. Original single-stream
+formats remain available without ffmpeg; automatic best video then chooses a
+combined stream. Standard Linux process tools `setsid` and `kill` must also be available
+(normally supplied by util-linux/procps). The popup detects missing tools and
+shows an error inside the input; Settings explains setup and links to this guide.
+No tools are silently downloaded or installed.
+
+Use a recent yt-dlp release with `--js-runtimes` support; CI tests **2026.10.26**.
+Older distribution packages, such as 2025.04.30, do not accept that option and
+can fail discovery when an external JavaScript runtime is found. If your package
+is too old, upgrade using [yt-dlp's official installation instructions](https://github.com/yt-dlp/yt-dlp/wiki/Installation).
+Check that `yt-dlp --help` lists `--js-runtimes` after updating.
+
+For YouTube, install **Deno 2.3.0 or newer** and the matching yt-dlp EJS components
+as described in [yt-dlp's EJS setup guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
+Your distribution may package EJS separately; official yt-dlp executables bundle
+it. Deno is recommended; modern Bun is not a supported yt-dlp challenge runtime.
+With mise, `mise use --global deno@2` is an option. The extension detects desktop
+PATH executables, `~/.local/bin`, and mise's standard shims directory. Other
+supported challenge runtimes can be configured through yt-dlp.
+
+Install a supplied ZIP with your extension manager or:
 
 ```bash
-mise use --global bun@1.4.4
-bun install
-bun run extension:install
-```
-
-The build also needs `glib-compile-schemas` (GLib); `extension:pack` needs `zip`.
-Keep `yt-dlp` and `ffmpeg` installed and available to your desktop session.
-Installation copies the build to
-`$XDG_DATA_HOME/gnome-shell/extensions/yt-down@drissnafii`
-(default `~/.local/share/gnome-shell/extensions/yt-down@drissnafii`).
-
-**Log out of GNOME completely and log back in after the first installation**,
-then enable it. On Wayland, closing the terminal or locking the screen does not
-reload GNOME Shell:
-
-```bash
-gnome-extensions enable yt-down@drissnafii
-```
-
-If enabling reports `Extension “yt-down@drissnafii” does not exist`, the running
-shell has not discovered the installed files yet. Log out and back in, then
-check `gnome-extensions list` and run the enable command again.
-
-Open **Settings** in the panel popup to change the download folder or Bun
-executable. By default downloads go to your XDG Videos directory under `yt-down/`.
-Bun is detected from the desktop PATH, mise's standard shims directory,
-`~/.local/bin`, or `~/.bun/bin`. If needed, copy the absolute path printed by
-`mise which bun` into the Bun setting. Session environment variables such as
-`YT_DLP_COOKIES`, `YT_DLP_BIN` and `YT_DOWN_FRAGMENTS` apply to the backend;
-variables exported only in a terminal are not automatically visible to GNOME.
-
-Build a ZIP for manual installation or sharing:
-
-```bash
-bun run extension:pack
-# dist/yt-down@drissnafii.shell-extension.zip
 gnome-extensions install --force dist/yt-down@drissnafii.shell-extension.zip
 ```
 
-This package bundles the Bun backend but still requires Bun, yt-dlp and ffmpeg on
-the receiving machine. This is a local install package; it has not been submitted
-to extensions.gnome.org for review.
+Log out and back in if GNOME has not discovered the extension or needs to load
+updated modules, then enable `yt-down@drissnafii`. On Wayland, locking the screen
+or closing a terminal does not restart Shell. Use Settings to change the download
+folder, parallel downloads, clipboard detection, or automatic downloads. The old
+`bun-path` key is retained for migration compatibility but is ignored.
+
+Session environment variables such as `YT_DLP_COOKIES`, `YT_DLP_BIN`,
+`YT_DLP_JS_RUNTIME`, `YT_DOWN_DOWNLOADER` and `YT_DOWN_FRAGMENTS` still apply.
+Variables exported only in a terminal are not automatically visible to GNOME.
+
+### Build and install from source
+
+Developers use Bun through mise; this is not an end-user runtime requirement:
+
+```bash
+mise install
+mise exec -- bun install --frozen-lockfile --ignore-scripts
+mise exec -- bun run extension:install
+# Or create the distributable ZIP:
+mise exec -- bun run extension:pack
+```
+
+The build also requires `glib-compile-schemas` (GLib); packing requires `zip`.
+The ZIP contains readable `extension.js`, `prefs.js`, `worker.js`, metadata,
+stylesheet, schemas and the MIT license. It contains no Bun backend, runtime
+binaries, node_modules, or media tools. Installation copies it into
+`$XDG_DATA_HOME/gnome-shell/extensions/yt-down@drissnafii` (normally under
+`~/.local/share`).
+
+Support development through [Gumroad](https://drissnafii.gumroad.com/l/support).
+The donation URL is also declared in extension metadata for catalog clients.
+See [the listing kit](docs/gnome-listing.md) for screenshots, icon, description,
+and the remaining manual publication steps.
 
 ### Development
 
@@ -316,14 +352,18 @@ bun run extension:smoke
 The build is written to `dist/yt-down@drissnafii/`. After changing the extension,
 rebuild and reinstall, then restart your GNOME session to load updated ES modules.
 The automated `extension:smoke` check runs a separate headless GNOME Shell with
-memory-backed settings and a fixture backend. It exercises loading, presets,
+memory-backed settings, the real GJS worker, and a fake yt-dlp executable. It exercises loading, presets,
 progress, completion, reduced motion, and cleanup, and verifies that your desktop's
 enabled-extension list stayed unchanged. It requires a working local GNOME Shell
-and a built extension. It does not download media or use browser cookies.
+and a built extension. Pass `--package` to load the generated ZIP instead of
+the build directory. It does not contact websites or use browser cookies. Worker integration tests also
+cover metadata reuse, retries, permanent failures, process-tree cancellation, and
+destruction during startup, metadata extraction, downloading and retry delay.
+Hosted CI includes a separate Fedora 45 container job that verifies Shell 51 and
+loads the actual ZIP in an isolated headless session.
 
-For a graphical test on GNOME 49 and newer, use
-`GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --devkit`; on GNOME 45–48,
-use `GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --nested --wayland`.
+For a graphical test on GNOME 51, use
+`GSETTINGS_BACKEND=memory dbus-run-session -- gnome-shell --devkit`.
 Keep settings memory-backed when testing a nested shell so it cannot overwrite
 your desktop preferences.
 
@@ -337,7 +377,25 @@ GNOME references: [TypeScript extensions](https://gjs.guide/extensions/developme
 [asynchronous subprocesses](https://gjs.guide/guides/gio/subprocesses.html),
 and [GNOME 51 changes](https://gjs.guide/extensions/upgrading/gnome-shell-51.html).
 
-### JSON backend interface
+### Compare the old runtime path with GJS
+
+The worker integration test verifies that discovery runs once and the download
+uses its metadata. For a real-media timing comparison on your own machine:
+
+```bash
+mise exec -- bun run extension:build
+mise exec -- bun run benchmark:gnome 'https://example.com/video.mp4' best ./benchmark-gnome video
+```
+
+Replace the example with a URL you are authorized to download. This command
+downloads the same selection through the standalone Bun CLI (fresh metadata on
+selection) and the persistent GJS worker into separate directories. It records
+discovery, selection-to-first-progress, and selection-to-completion timings.
+Network and filesystem caching affect sequential samples; repeat with the paths
+in reverse order with `--gjs-first` before drawing performance conclusions. No public-site speed
+improvement has been measured or claimed for this migration.
+
+### Standalone Bun CLI JSON interface
 
 Other frontends can use the same newline-delimited JSON API:
 

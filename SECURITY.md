@@ -13,7 +13,8 @@ Do not publish exploits, real cookies, tokens, or private URLs in public issues.
 ## Trust and privacy
 
 This is a downloader, not a sandbox. The extension runs in GNOME Shell and
-launches a local Bun backend, yt-dlp, and ffmpeg as your user. Install trusted
+launches an isolated GJS worker, yt-dlp, and ffmpeg as your user. The standalone
+CLI uses Bun. Install trusted
 versions of these programs and only run code you trust.
 
 Browser cookies are off by default. Setting `YT_DLP_COOKIES` explicitly opts in;
@@ -29,3 +30,15 @@ media providers. There is no project-operated download server or telemetry.
 Downloads and temporary partial files are stored locally.
 
 See [docs/maintaining.md](docs/maintaining.md) for CI and release safeguards.
+
+The GJS worker retains discovered metadata in memory until the session is used
+or discarded. A download snapshot is written to a private temporary directory
+with mode 0600 and removed on completion/cancellation. The parent also cleans it
+after a forced worker stop. A sudden power loss can leave private temporary data;
+no metadata is added to the extension package or Git repository.
+
+User cancellation has a three-second forced-stop fallback. Disabling/unloading
+clears that timer, drops event/UI callbacks and immediately kills the process
+group and its root process. Asynchronous completion only reaps children and
+removes private snapshots. Views cancel size queries and animations; the manager
+disconnects stage/settings signals, and the application removes input debounce.

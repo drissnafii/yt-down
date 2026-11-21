@@ -6,10 +6,10 @@ interface TransferOptions {
 }
 
 export function getTransferArgs({
-  fragments = Bun.env.YT_DOWN_FRAGMENTS ?? '4',
-  downloader = Bun.env.YT_DOWN_DOWNLOADER ?? 'native',
-  findExecutable = Bun.which,
-  warn = console.error,
+  fragments = '4',
+  downloader = 'native',
+  findExecutable = () => null,
+  warn = () => {},
 }: TransferOptions = {}): string[] {
   if (!/^\d+$/.test(fragments) || Number(fragments) < 1 || Number(fragments) > 16) {
     throw new Error('YT_DOWN_FRAGMENTS must be an integer from 1 to 16.');

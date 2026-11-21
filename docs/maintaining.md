@@ -34,7 +34,7 @@ Account passkeys/2FA and recovery codes must be configured by the account owner.
 3. From a clean checkout of that commit, use `mise install` and
    `mise exec -- bun install --frozen-lockfile --ignore-scripts`.
 4. Run tests, typecheck, extension build, and the isolated GNOME smoke test.
-   The hosted CI does not run the GNOME smoke test. Integration tests skip if
+   The hosted GNOME 51 UI job runs the smoke test against the packed ZIP. Integration tests skip if
    yt-dlp or ffmpeg are absent; check the reported skips and run them locally.
 5. Run `mise exec -- bun run extension:pack`. Inspect the ZIP for accidental
    credentials, browser data, executables, and unnecessary files. Confirm
@@ -53,23 +53,21 @@ The extension has not been submitted. Review the current
 [GNOME guidelines](https://gjs.guide/extensions/review-guidelines/review-guidelines.html)
 before every submission. In particular:
 
-- **External backend remains a submission concern.** The ZIP bundles a Bun
-  backend and requires separately installed Bun, yt-dlp, and ffmpeg. GNOME
-  strongly discourages external scripts and requires GJS unless another
-  language is necessary. Seek reviewer guidance with the actual architecture.
-  A separately installed downloader or GJS frontend calling yt-dlp directly
-  may be needed; merely moving files does not guarantee acceptance.
+- **Architecture:** the ZIP now includes a standalone GJS worker that directly
+  invokes separately installed yt-dlp and ffmpeg. There is no Bun backend or
+  executable binary in the ZIP. Heavy parsing and retry work stay outside Shell.
+  Explain the external tools to reviewers; this architecture does not guarantee
+  approval. No automatic dependency installation is implemented.
 - **Clipboard:** access is disclosed in metadata and off by default. When
   enabled, it only fills the field locally; Enter or Find video authorizes
   sending the URL. Verify this behavior in the smoke test.
 - **Cookies:** browser discovery requires explicit `YT_DLP_COOKIES=auto` or a
   browser selection. Do not include cookies or private profiles in the ZIP.
 - **Licensing:** the repository uses MIT, which permits GPL-compatible
-  redistribution. Include the project license and dependency notices. GNOME
+  redistribution. Include the project license and any required dependency notices. GNOME
   distributes extensions under GPL-compatible terms.
-- **Compatibility:** metadata declares GNOME 45–51, but automated runtime
-  testing currently covers GNOME 51. Verify claimed versions before upload
-  or narrow the declaration to versions actually verified.
+- **Compatibility:** metadata declares only GNOME 51, which the isolated UI
+  test covers. Add earlier versions only after verifying them.
 - **Presentation:** supply accurate screenshots and a description explaining
   prerequisites and privacy behavior. Do not claim GNOME approval before it
   has been granted. Maintainers must understand and explain submitted code.
@@ -79,9 +77,42 @@ before every submission. In particular:
 The workflow runs tests, CLI typecheck, and extension compilation (including
 the GNOME typecheck). It installs Bun through the checked-in mise config and
 uses the committed lockfile. Package lifecycle scripts and shared CI caches
-are disabled. Some media integration tests require optional local tools.
+are disabled. CI installs GJS, Python, yt-dlp and ffmpeg to exercise the worker
+and local media integration tests. A separate Fedora 45 container job verifies GNOME 51 and runs the full UI smoke
+test against the ZIP as a non-root user, with isolated D-Bus and memory-backed
+settings. The official container index is pinned by digest; verify its source
+and Shell version when updating it. The same smoke test runs locally.
+The disposable container starts its own system bus. An empty, package-created
+systemd seat directory is removed so GNOME uses its supported non-systemd login
+manager; the container has no real logind session. The Shell/extension code and
+UI assertions are not replaced or skipped.
+The yt-dlp test executable is pinned to an official release and verified against
+a checked-in SHA-256 digest; update the release and digest together after
+checking the upstream release checksums. Older distro yt-dlp packages may lack
+the JavaScript runtime flags used by the downloader.
 Workflow changes must retain the `checks` job name or update the ruleset too.
 
 Require the status check once it appears in GitHub. For an early CI
 failure, fix the branch and push again; do not disable branch protection to
 merge around it. Never automatically run untrusted code on a personal runner.
+
+
+The [listing kit](gnome-listing.md) contains prepared screenshots, icon and copy.
+The catalog controls the numeric `version`; metadata uses `version-name` for the
+human-facing version and declares the Gumroad support URL through `donations`.
+
+
+The extension entry point delegates to `Application`, `PopupView`,
+`DownloadManager`, and `DownloadView`. Keep ownership explicit: the manager
+owns focus/settings signals and worker sessions, each view owns its actors and
+queries, and the application owns input debounce and discovery. User cancellation
+allows a three-second grace period; module destruction clears that timer and
+kills the worker group immediately, including the setsid startup race. Tests
+verify destruction during startup, metadata, active transfer, retry delay and
+unresponsive children, plus actual disable/re-enable behavior in Shell 51.
+
+ffmpeg is a feature dependency, not a prerequisite for metadata discovery or
+original single-stream downloads. Conversion and separately selected video/audio
+require it. The shared format model returns choices; adapters construct protocol
+events. Unknown download failures remain permanent, while both supported
+truncated-transfer error formats are classified as interrupted connections.

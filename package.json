@@ -16,7 +16,8 @@
     "extension:install": "bun run scripts/extension.ts install",
     "extension:pack": "bun run scripts/extension.ts pack",
     "extension:typecheck": "tsc -p extension/tsconfig.json",
-    "extension:smoke": "bun run scripts/extension-smoke.ts"
+    "extension:smoke": "bun run scripts/extension-smoke.ts",
+    "benchmark:gnome": "bun run scripts/benchmark-gnome.ts"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
