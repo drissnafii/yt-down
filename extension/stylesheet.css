@@ -37,6 +37,8 @@
 .yt-down-action { min-height: 36px; padding: 0 12px; border-radius: 6px; background-color: rgba(128,128,128,0.14); border: 1px solid rgba(128,128,128,0.22); }
 .yt-down-action-content { spacing: 8px; }
 .yt-down-action:hover, .yt-down-action:focus { background-color: rgba(128,128,128,0.24); }
+.yt-down-queue-link { font-size: 0.9em; text-decoration: underline; border-radius: 4px; }
+.yt-down-queue-link:hover, .yt-down-queue-link:focus { background-color: rgba(128,128,128,0.24); }
 .yt-down-jobs { spacing: 8px; }
 .yt-down-jobs-scroll { max-height: 280px; }
 .yt-down-job-header { spacing: 8px; }

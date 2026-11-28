@@ -1,3 +1,4 @@
+import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
@@ -33,7 +34,11 @@ export class PopupView {
   more!: PopupMenu.PopupSubMenuMenuItem;
   jobsBox!: St.BoxLayout;
   jobsScroll!: St.ScrollView;
-  jobsHeading!: St.Label;
+  queuedBox!: St.BoxLayout;
+  private jobsHeading: St.BoxLayout;
+  private activeHeading: St.Label;
+  private emptyQueue: St.Label;
+  private queueButton: St.Button;
   phase: Phase = 'idle';
   percent: number | null = null;
   private active = 0;
@@ -142,13 +147,27 @@ export class PopupView {
     this.statusRow.add_child(this.status);
     this.statusRow.add_child(this.cancelButton);
     footer.add_child(this.statusRow);
-    this.jobsHeading = label('', 'yt-down-secondary');
-    this.jobsHeading.visible = false;
+    this.jobsHeading = new St.BoxLayout({ visible: false });
+    this.activeHeading = label('', 'yt-down-secondary');
+    this.activeHeading.x_expand = false;
+    this.emptyQueue = label('0 queued', 'yt-down-secondary');
+    this.queueButton = new St.Button({ can_focus: true, style_class: 'yt-down-queue-link', visible: false });
+    this.queueButton.add_accessible_state(Atk.StateType.EXPANDABLE);
+    this.queueButton.connect('clicked', () => this.setQueueExpanded(!this.queuedBox.visible));
+    this.jobsHeading.add_child(this.activeHeading);
+    this.jobsHeading.add_child(this.emptyQueue);
+    this.jobsHeading.add_child(this.queueButton);
     footer.add_child(this.jobsHeading);
+
+    this.queuedBox = column('yt-down-jobs');
+    this.queuedBox.visible = false;
     this.jobsBox = column('yt-down-jobs');
+    const downloads = column('yt-down-jobs');
+    downloads.add_child(this.queuedBox);
+    downloads.add_child(this.jobsBox);
     this.jobsScroll = new St.ScrollView({ style_class: 'yt-down-jobs-scroll', overlay_scrollbars: true,
       hscrollbar_policy: St.PolicyType.NEVER, vscrollbar_policy: St.PolicyType.AUTOMATIC, visible: false });
-    this.jobsScroll.set_child(this.jobsBox);
+    this.jobsScroll.set_child(downloads);
     footer.add_child(this.jobsScroll);
 
     menu.connect('open-state-changed', (_menu, open: boolean) => {
@@ -299,9 +318,19 @@ export class PopupView {
   updateDownloads(active: number, queued: number, total: number, percent: number | null): void {
     this.active = active; this.queued = queued; this.percent = percent;
     this.jobsHeading.visible = this.jobsScroll.visible = total > 0;
-    this.jobsHeading.text = `${active} downloading · ${queued} queued`;
+    this.activeHeading.text = `${active} downloading · `;
+    this.emptyQueue.visible = queued === 0;
+    this.queueButton.visible = queued > 0;
+    this.queueButton.label = `${queued} queued`;
+    if (queued === 0) this.setQueueExpanded(false);
     this.syncPanel();
   }
+  private setQueueExpanded(expanded: boolean): void {
+    this.queuedBox.visible = expanded;
+    if (expanded) this.queueButton.add_accessible_state(Atk.StateType.EXPANDED);
+    else this.queueButton.remove_accessible_state(Atk.StateType.EXPANDED);
+  }
+
   private syncPanel(): void {
     const active = this.active > 0 || this.busy();
     const ring = active && this.percent !== null;

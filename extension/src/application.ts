@@ -28,7 +28,7 @@ export class Application {
       cancel: () => { this.backend?.cancel(); this.view.setStatus('Cancelling…'); this.view.cancelButton.reactive = false; },
       choose: choice => this.download(choice), preferences: openPreferences, opened: () => this.onOpen() });
     this.mediaOpener = new MediaOpener(uri => this.launchUri(uri));
-    this.downloads = new DownloadManager(settings, this.view.jobsBox, {
+    this.downloads = new DownloadManager(settings, this.view.jobsBox, this.view.queuedBox, {
       changed: () => this.syncDownloads(), isOpen: () => this.view.isOpen(),
       file: path => { void this.openMedia(path); }, folder: path => this.openPath(path),
     });
