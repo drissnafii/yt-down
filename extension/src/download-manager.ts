@@ -24,7 +24,8 @@ export class DownloadManager {
   private focusSignal: number;
   private disposed = false;
 
-  constructor(private settings: Gio.Settings, private container: St.BoxLayout, private callbacks: Callbacks) {
+  constructor(private settings: Gio.Settings, private container: St.BoxLayout, private queuedContainer: St.BoxLayout,
+    private callbacks: Callbacks) {
     this.queue = new TaskQueue(settings.get_int('parallel-downloads'), (job, done) => this.start(job, done));
     this.limitSignal = settings.connect('changed::parallel-downloads', () => {
       this.queue.setLimit(settings.get_int('parallel-downloads')); callbacks.changed();
@@ -55,7 +56,7 @@ export class DownloadManager {
       cancel: () => this.cancel(job), file: () => this.callbacks.file(job.filePath), folder: () => this.callbacks.folder(job.directory),
     });
     job = { url, title, choice, directory, state: 'queued', percent: null, filePath: '', backend, view };
-    this.jobs.push(job); this.container.add_child(view.card);
+    this.jobs.push(job); this.queuedContainer.add_child(view.card);
     this.queue.add(job, `${directory}\0${url}`); this.callbacks.changed();
   }
   updateActions(): void { for (const job of this.jobs) job.view.updateActions(); }
@@ -69,7 +70,10 @@ export class DownloadManager {
     this.jobs = this.jobs.filter(item => item !== job); job.backend?.destroy(); job.backend = undefined; job.view.destroy();
   }
   private start(job: DownloadJob, done: () => void): void {
-    job.state = 'active'; job.view.connecting();
+    job.state = 'active';
+    this.queuedContainer.remove_child(job.view.card);
+    this.container.add_child(job.view.card);
+    job.view.connecting();
     try {
       if (!job.backend) throw new Error('The video session has ended. Paste the link again.');
       job.backend.download({ url: job.url, mode: job.choice.mode, id: job.choice.id, directory: job.directory },

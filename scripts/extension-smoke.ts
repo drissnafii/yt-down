@@ -299,8 +299,16 @@ else:
     await capture('downloads');
     await check("e.downloads.queue.active === 2 && e.downloads.queue.queued === 1 && e.view.entry.clutter_text.editable", 'two simultaneous downloads and an editable input');
     await check("e.downloads.jobs.filter(j=>j.state==='active').length === 2 && e.downloads.jobs.filter(j=>j.state==='queued').length === 1", 'independent job state');
+    await check("e.view.queueButton.label === '1 queued' && !e.view.queuedBox.visible", 'queue starts collapsed');
+    await evaluate("globalThis.__getYtDown().view.queueButton.grab_key_focus(); 'OK'");
+    await key('space');
+    await check("e.view.queuedBox.visible && e.view.queuedBox.get_n_children() === 1 && e.view.queuedBox.get_first_child().get_first_child().get_first_child().text === 'A walk through the mountains'", 'queue disclosure shows the waiting video title');
+    await key('space');
+    await check("!e.view.queuedBox.visible", 'queue disclosure closes again');
+    await key('space');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.downloads.cancel(e.downloads.jobs.find(j=>j.state==='active')); return 'OK'; })()");
     await waitFor(() => evaluate('globalThis.__getYtDown().downloads.queue.queued'), value => value.includes("'0'"), 'cancelled slot starts queued download');
+    await check("!e.view.queueButton.visible && !e.view.queuedBox.visible && e.view.queuedBox.get_n_children() === 0 && e.downloads.jobs.find(j=>j.url.endsWith('batch3')).view.card.get_parent() === e.view.jobsBox", 'starting the last queued job closes the disclosure and moves its card');
     await check("e.downloads.queue.active === 2 && e.downloads.jobs.some(j=>j.state==='cancelled')", 'per-job cancellation leaves the other download running');
     await evaluate("(() => { const e=globalThis.__getYtDown(); e.view.motionAllowed=()=>false; e.view.setPhase('searching'); e.view.syncMotion(); return 'OK'; })()");
     await check("e.view.skeleton.opacity === 255 && e.view.skeleton.get_transition('opacity') === null", 'reduced motion');
